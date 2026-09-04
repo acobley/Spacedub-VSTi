@@ -103,12 +103,11 @@
   <text x="50" y="628" font-size="10.5" fill="#6b7280">Filter off: tap 5 is an ordinary tap — buffer × Taps Gain, like the other four. Note the filtered tap leaves through <tspan font-weight="700">Feedback Out</tspan>, not Taps Gain.</text>
 
   <!-- main feedback: tapped after Filter Gain, before Feedback Out -->
-  <path d="M470,514 L470,590 L186,590 L186,246" fill="none" stroke="#b45309" stroke-width="1.7" marker-end="url(#ar)"/>
+  <path d="M470,514 L470,590 L48,590 L48,186 L186,186 L186,200" fill="none" stroke="#b45309" stroke-width="1.7" marker-end="url(#ar)"/>
   <rect x="240" y="577" width="120" height="26" rx="5" fill="#fdf6ec" stroke="#b45309"/>
   <text x="300" y="594" font-size="11.5" font-weight="600" fill="#b45309" text-anchor="middle">× Feedback</text>
-  <text x="500" y="586" font-size="10.5" fill="#b45309">main feedback, when Main Feedback is on</text>
+  <text x="500" y="584" font-size="10.5" fill="#b45309">main feedback, when Main Feedback is on</text>
   <text x="500" y="600" font-size="10.5" fill="#c98a4b">(filter off: the raw last tap is fed back instead)</text>
-  <text x="196" y="566" font-size="10.5" fill="#b45309">summed in</text>
 
   <!-- ================= PANEL B ================= -->
   <rect x="30" y="675" width="980" height="460" rx="10" fill="#ffffff" stroke="#d7dbe0"/>

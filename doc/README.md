@@ -1,6 +1,8 @@
 # doc
 
-**[signal-routing.svg](signal-routing.svg)** — how audio flows through the plug-in.
+**[signal-routing.png](signal-routing.png)** — how audio flows through the
+plug-in. [`signal-routing.svg`](signal-routing.svg) is the source; the PNG is
+exported from it at 2× (2080 × 2370) for anywhere that will not render SVG.
 
 Two panels:
 
@@ -22,6 +24,6 @@ deliberate behaviour inherited from the DXi:
   amount fed back is not the amount you hear.
 * With the filter off, the signal fed back is the **raw** last tap.
 
-The drawing is maintained by hand. If you change the routing, change it here
-too — `PORTING-NOTES.md` sections 3 and 4 explain the reasoning behind each
-path.
+The drawing is maintained by hand. If you change the routing, edit the SVG and
+re-export the PNG — `PORTING-NOTES.md` sections 3 and 4 explain the reasoning
+behind each path.
