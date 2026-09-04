@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Info.plist template for the Audio Unit (AUv2) wrapper.
+
+	The wrapper itself is Steinberg's, from public.sdk/source/vst/auwrapper; it
+	loads the VST3 that CMake symlinks into the .component's Resources folder
+	and needs no per-plug-in C++ at all. Everything specific to SpaceDub is in
+	this file.
+
+	The three four-character codes below are the plug-in's identity to macOS.
+	Once you have shipped a build, changing any of them makes every existing
+	session lose the plug-in - treat them like the class UIDs in SpaceDubIDs.h.
+
+	  type          aufx  = audio effect (aumu would be an instrument)
+	  subtype       SDub  = this plug-in
+	  manufacturer  AECo  = A. E. Cobley
+
+	Apple reserves all-lowercase manufacturer codes for itself, so 'AECo' keeps
+	at least one capital deliberately.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>English</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>2.0.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.0.0</string>
+
+	<key>AudioComponents</key>
+	<array>
+		<dict>
+			<key>factoryFunction</key>
+			<string>AUWrapperFactory</string>
+			<key>description</key>
+			<string>SpaceDub stereo multi-tap delay</string>
+			<key>manufacturer</key>
+			<string>AECo</string>
+			<key>name</key>
+			<string>A. E. Cobley: SpaceDub</string>
+			<key>subtype</key>
+			<string>SDub</string>
+			<key>type</key>
+			<string>aufx</string>
+			<!-- 0x00020000 == 2.0.0 -->
+			<key>version</key>
+			<integer>131072</integer>
+		</dict>
+	</array>
+
+	<!-- Read by the wrapper with sscanf("%x"), so this one is a hex string. -->
+	<key>AudioUnit Version</key>
+	<string>00020000</string>
+
+	<!-- Matches SpaceDubProcessor::setBusArrangements: stereo in / stereo out,
+	     or mono in / mono out. Nothing else is accepted. -->
+	<key>AudioUnit SupportedNumChannels</key>
+	<array>
+		<dict>
+			<key>Inputs</key>
+			<string>2</string>
+			<key>Outputs</key>
+			<string>2</string>
+		</dict>
+		<dict>
+			<key>Inputs</key>
+			<string>1</string>
+			<key>Outputs</key>
+			<string>1</string>
+		</dict>
+	</array>
+</dict>
+</plist>
