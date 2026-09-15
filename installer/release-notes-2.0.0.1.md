@@ -71,13 +71,13 @@ sudo rm -rf /Library/Audio/Plug-Ins/Components/SpaceDub.component
 ## Checksum
 
 ```
-PASTE-THE-SHA256-HERE  SpaceDub-2.0.0.1.pkg
+952ae5f298d961cd304ae85be56149f0cf52229c9d608d4dcd769fe149bf65f5  SpaceDub-2.0.0.1.pkg
 ```
 
-Take it from the finished, stapled package — stapling changes the bytes:
+Check it after downloading:
 
 ```sh
-shasum -a 256 installer/SpaceDub-2.0.0.1.pkg
+shasum -a 256 SpaceDub-2.0.0.1.pkg
 ```
 
 ---
