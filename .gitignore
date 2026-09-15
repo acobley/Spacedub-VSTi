@@ -1,3 +1,19 @@
 build/
 external/
 .DS_Store
+
+# Installer build output. A released .pkg is a GitHub Release asset against a
+# tag, never a commit: git never forgets a blob, and deleting one later shrinks
+# no clone that already exists. Ignoring loose builds also stops a `git add -A`
+# sweeping an UNSIGNED package into the repo.
+installer/build/
+installer/*.pkg
+
+# Signing material. A leaked Developer ID lets somebody sign malware as you,
+# and Apple's remedy is revoking it - invalidating everything ever signed.
+*.cer
+*.certSigningRequest
+*.p12
+*.pfx
+*.p8
+AuthKey_*

@@ -23,8 +23,24 @@ cmake_minimum_required(VERSION 3.25.0)
 
 set(CMAKE_OSX_DEPLOYMENT_TARGET 10.13 CACHE STRING "macOS deployment target")
 
+# Build a universal binary. Without this the Xcode generator produces whatever
+# the building Mac happens to be - arm64, in practice - while
+# installer/distribution.xml advertises the installer as x86_64,arm64. The two
+# disagreeing is a silent failure: on an Intel Mac, or in any host running
+# under Rosetta, the package installs perfectly and nothing loads.
+#
+# Check what actually came out before publishing:
+#     lipo -archs build/VST3/Release/SpaceDub.vst3/Contents/MacOS/SpaceDub
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
+
+# The single source of truth for the version. installer/build-installer.sh
+# greps this exact line out of this file, so the installer and the bundles can
+# never disagree - keep the set(...) spelling even though project() could carry
+# the number on its own.
+set(PLUGIN_VERSION "2.0.0.1")
+
 project(SpaceDub
-    VERSION 2.0.0.1
+    VERSION ${PLUGIN_VERSION}
     DESCRIPTION "SpaceDub - stereo multi-tap delay with ladder filter"
 )
 
@@ -215,6 +231,37 @@ set(SMTG_ENABLE_VSTGUI_SUPPORT        1 CACHE BOOL "" FORCE)
 set(SMTG_CREATE_PLUGIN_LINK           1 CACHE BOOL "" FORCE)
 
 set(SMTG_VSTGUI_ROOT "${VST3_SDK_ROOT}")
+
+#-----------------------------------------------------------------------------
+# Keep absolute build paths out of the shipped binary.
+#
+# VSTGUI's assert macros embed __FILE__, so without this a Release build of the
+# plug-in carries ~50 absolute paths naming the home directory it was built in -
+# public the moment an installer is published.
+#
+# Two things matter here. -fdebug-prefix-map does NOT do this: it rewrites debug
+# info and leaves __FILE__ alone. And the paths are in VSTGUI's translation
+# units rather than ours, so this has to be add_compile_options() BEFORE
+# add_subdirectory() - target_compile_options() on the SpaceDub target would
+# strip almost nothing.
+#
+# Guarded because an unknown flag is a hard error on an older toolchain, and
+# this is cosmetic. Verify with:
+#     strings -a build/VST3/Release/SpaceDub.vst3/Contents/MacOS/SpaceDub \
+#         | grep -c "$HOME"        # want 0
+# It only takes effect on a fresh configure, so re-run setup-xcode.sh --clean.
+#-----------------------------------------------------------------------------
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-ffile-prefix-map=/a=b" SPACEDUB_HAVE_FILE_PREFIX_MAP)
+if(SPACEDUB_HAVE_FILE_PREFIX_MAP)
+    add_compile_options(
+        "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=SpaceDub"
+        "-ffile-prefix-map=${VST3_SDK_ROOT}=vst3sdk"
+        "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
+else()
+    message(STATUS "SpaceDub: this compiler has no -ffile-prefix-map, so the "
+                   "Release binary will carry absolute build paths")
+endif()
 
 add_subdirectory(${VST3_SDK_ROOT} ${PROJECT_BINARY_DIR}/vst3sdk)
 smtg_enable_vst3_sdk()
