@@ -37,7 +37,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures")
 # greps this exact line out of this file, so the installer and the bundles can
 # never disagree - keep the set(...) spelling even though project() could carry
 # the number on its own.
-set(PLUGIN_VERSION "2.0.0.1")
+set(PLUGIN_VERSION "2.0.1.0")
 
 project(SpaceDub
     VERSION ${PLUGIN_VERSION}
@@ -320,7 +320,7 @@ smtg_target_add_plugin_resources(SpaceDub
 if(SMTG_MAC)
     smtg_target_set_bundle(SpaceDub
         BUNDLE_IDENTIFIER "audio.spacedub.vst3"
-        COMPANY_NAME "A. E. Cobley"
+        COMPANY_NAME "AE Cobley"
     )
     smtg_target_set_debug_executable(SpaceDub
         "/Applications/VST3PluginTestHost.app"

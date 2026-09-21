@@ -8,6 +8,7 @@ external/
 # sweeping an UNSIGNED package into the repo.
 installer/build/
 installer/*.pkg
+installer/.built-from
 
 # Signing material. A leaked Developer ID lets somebody sign malware as you,
 # and Apple's remedy is revoking it - invalidating everything ever signed.
