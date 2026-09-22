@@ -91,7 +91,7 @@ sudo rm -rf /Library/Audio/Plug-Ins/Components/SpaceDub.component
 ## Checksum
 
 ```
-SHA-256: <paste from: shasum -a 256 installer/SpaceDub-2.0.1.0.pkg>
+SHA-256: f44fab24d5612b66abdac58745ae0d8c43468fa503f283d15b2232ee879a78ca
 ```
 
 Check it after downloading:
