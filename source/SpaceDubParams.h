@@ -15,6 +15,8 @@
 
 #include "pluginterfaces/vst/vsttypes.h"
 
+#include <cmath>
+
 namespace SpaceDub {
 
 //------------------------------------------------------------------------
@@ -48,7 +50,26 @@ enum Param : Steinberg::Vst::ParamID
 	kFilterGainRight,       // "RightFilterGain"
 	kMidiRate,              // tempo-sync division, 0 = off
 	kTempo,                 // manual tempo, 0 = follow the host
-	kMainOut,               // "Main Out" - dry signal straight through
+	kMainOut,               // "Main Out" - the dry signal. The DXi's Straight Thru was an
+	                        // on/off switch; since branch Polivoks it is Dry Level, 0..100 %
+	                        // of the input mixed in with the echoes. Same id and the same
+	                        // normalised ends, so a saved "on" loads as 100 % and "off" as 0.
+
+	// How much each tap feeds back when Taps Feedback is on (branch
+	// Polivoks): DelayLine multiplies the Loop Scale regeneration by these,
+	// one per tap per channel. 0..200 %, default 100 % - exactly the DXi's
+	// regeneration, which had one amount for all five taps. Set from the
+	// handles on the tap scope.
+	kTapFeedbackLeft1,
+	kTapFeedbackLeft2,
+	kTapFeedbackLeft3,
+	kTapFeedbackLeft4,
+	kTapFeedbackLeft5,
+	kTapFeedbackRight1,
+	kTapFeedbackRight2,
+	kTapFeedbackRight3,
+	kTapFeedbackRight4,
+	kTapFeedbackRight5,
 
 	kNumParams,
 
@@ -66,8 +87,57 @@ enum Param : Steinberg::Vst::ParamID
 	    m_Tempo = 0 whenever the host's tempo was out of range, and the
 	    property page tested `if (nTempo != 0)` before overwriting its tempo
 	    control on the timer. The editor needs the same distinction. */
-	kHostTempoOut = 1001
+	kHostTempoOut = 1001,
+
+	/** Read-only, processor -> controller: how much signal is coming out of
+	    each tap - kTapLevelOut + 0..4 the left channel's taps 1..5,
+	    + 5..9 the right's - as a meter value (tapMeterValue). Published the
+	    same way as kHostTempoOut, for the tap scope. Not saved. */
+	kTapLevelOut = 1002,
+	kTapLevelOutEnd = kTapLevelOut + 10
 };
+
+/** The tap meters' scale: -60 dBFS at 0, +6 dBFS at 1, linear in dB. */
+constexpr double kTapMeterFloorDb = -60.0;
+constexpr double kTapMeterTopDb   = 6.0;
+
+/** A peak sample value (linear, >= 0) as a 0..1 meter value. */
+inline double tapMeterValue (double peak)
+{
+	if (!(peak > 0.0))
+		return 0.0;
+	const double db = 20.0 * std::log10 (peak);
+	const double v  = (db - kTapMeterFloorDb) / (kTapMeterTopDb - kTapMeterFloorDb);
+	return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+}
+
+/** A meter value back to dBFS - the editor's readout. */
+inline double tapMeterDb (double value)
+{
+	return kTapMeterFloorDb + value * (kTapMeterTopDb - kTapMeterFloorDb);
+}
+
+/** Which tap a level parameter belongs to: channel 0 left, 1 right; tap 1..5. */
+inline Steinberg::Vst::ParamID tapLevelId (int channel, int tap)
+{
+	return static_cast<Steinberg::Vst::ParamID> (kTapLevelOut + channel * 5 + (tap - 1));
+}
+
+/** A tap's feedback level parameter: channel 0 left, 1 right; tap 1..5. */
+inline Steinberg::Vst::ParamID tapFeedbackId (int channel, int tap)
+{
+	return static_cast<Steinberg::Vst::ParamID> (kTapFeedbackLeft1 + channel * 5 + (tap - 1));
+}
+
+inline bool isTapFeedback (Steinberg::Vst::ParamID id)
+{
+	return id >= kTapFeedbackLeft1 && id <= kTapFeedbackRight5;
+}
+
+inline bool isTapLevel (Steinberg::Vst::ParamID id)
+{
+	return id >= kTapLevelOut && id < kTapLevelOutEnd;
+}
 
 /** Range of kHostTempoOut, matching the Tempo parameter's own scale. */
 constexpr double kHostTempoMax = 300.0;

@@ -116,7 +116,9 @@ void DelayLine::process (float input, float* taps)
 		{
 			// Tap-to-tap regeneration.  Bounded for the same reason as the
 			// main feedback path below - unbounded it grows exponentially.
-			const float v = line[oldRemovePos] + mScale * line[removePos];
+			// mTapFeedback is per tap (branch Polivoks); at its default of 1
+			// the product is exactly the DXi's mScale.
+			const float v = line[oldRemovePos] + (mScale * mTapFeedback[ix]) * line[removePos];
 			line[oldRemovePos] = std::isfinite (v)
 			                         ? std::clamp (v, static_cast<float> (-kCeiling),
 			                                       static_cast<float> (kCeiling))

@@ -67,9 +67,28 @@ identical values to the original.**
 | `PARAM_LEFTFILTERGAIN` / `RIGHT` | Left/RightFilterGain | Filter Gain Left/Right | 0–500 % | 0–3 | 250 |
 | `PARAM_MIDIRATE` | Midi rate | Sync Rate | 0–7 | 0–7 | 0 (Off) |
 | `PARAM_TEMPO` | Tempo | Tempo | 0–300 | 0–300 | 100 |
-| `PARAM_MAINOUT` | Main Out | Straight Thru | 0/1 | 0/1 | 1 |
+| `PARAM_MAINOUT` | Main Out | **Dry Level** (was Straight Thru) | 0–100 % | 0–1 | 100 |
+| — | — | **Tap 1–5 Feedback Left / Right** (new, ids 29–38) | 0–200 % | 0–2 | 100 |
 | — | — | **Bypass** (new, id 1000) | 0/1 | — | 0 |
 | — | — | **Host Tempo** (new, id 1001, read-only) | 0–300 | — | 0 |
+
+`Dry Level` was the DXi's `Straight Thru`, an on/off switch for the dry
+signal. On the `Polivoks` branch it became a continuous gain, 0–100 % of the
+input mixed in with the echoes, ramped per sample like the other smoothed
+parameters. It keeps the id and the normalised ends, so a preset or automation
+saved with Straight Thru on loads as 100 % and off as 0 % — what the switch
+did. The default is still 100 %.
+
+`Tap n Feedback Left/Right` are new on the `Polivoks` branch. With Taps
+Feedback on, `DelayLine::process` regenerates each tap into the one before it
+by `mScale` (Loop Scale) — one amount for all five taps in the DXi. Each tap
+now multiplies that by its own level, `mTapFeedback[ix]`; at the default of
+100 % the product is exactly `mScale`, so the sound is bit-identical to the
+original (`tests/DelayLineTests.cpp` check 6 renders it both ways). They are
+set per block, not ramped, and Link Loop Scale links them left to right. They
+are not on the panel's table: they are handles on the tap scope, shown while
+Taps Feedback is on. A state saved before they existed loads them at their
+default — both `setState`s now reset any parameter the stream does not carry.
 
 `Host Tempo` is not a control. It is the processor reporting the tempo the
 **host** supplied — zero when it supplied none — so the editor can show it and
@@ -178,6 +197,17 @@ accepted and the single channel is fed to both delay lines.
 ---
 
 ## 5. The interface
+
+> **Superseded on the `Polivoks` branch (27 Oct 2026).** The bitmap panel this
+> section describes was replaced by a 1200 × 640 black panel drawn entirely
+> with paths — R2Synth's Polivoks-style views, its 70s sci-fi lettering and
+> its "Studio Worn" wear, laid out from `Designs/SpaceDub-Polivoks-1-TapScope.png`.
+> The layout is data in `source/SpaceDubLayout.h`, checked by
+> `tests/LayoutTests.cpp`; the views are `source/SpaceDubPanelViews.*`. What
+> did NOT change: `readoutFor()` (bar the cutoff, now in kHz above 1 kHz), `tempoText()` and `applyLink()` (sections 7
+> and below) are the same code, so every number and every link behaves as
+> before. `SpaceDubControls.*` and the PNGs in `resource/` are gone; the
+> section below is kept as the record of how the original was ported.
 
 `IDD_PROPPAGE` in `SpaceDubMidi.rc` is 515 × 287 dialog units with a
 `SS_BITMAP` static holding `res/background-all.bmp` (766 × 499 pixels) at
@@ -313,6 +343,18 @@ registered `kIsReadOnly`, add a point, and the host delivers it to
 `EditController::setParamNormalized` on the correct thread. That is
 `kHostTempoOut`. It is deliberately *not* saved in the state — it is a readout,
 not a setting — so `getState`/`setState` still write only `kNumParams` values.
+
+**The tap meters use the same route** (branch `Polivoks`). The tap scope
+shows how much signal is going through each of the ten taps, so the processor
+measures each tap's peak per block in `processAudio`, turns it into a meter
+value (`tapMeterValue`: −60 … +6 dBFS, linear in dB, rising at once and
+falling back at 20 dB a second), and writes it into `outputParameterChanges`
+as ten read-only parameters, `kTapLevelOut` … `kTapLevelOut + 9` (ids
+1002–1011: left taps 1–5, then right). It publishes about 30 times a second
+and only the meters that moved. Like `kHostTempoOut` they are not saved. The
+meters measure the tap itself, so a tap that Taps Out leaves out of the mix
+still shows its signal (dimmed on the scope). When the plug-in is switched off
+or bypassed they fall to zero.
 
 Messages are still fine from `setActive`, `setState`, `initialize` and the like,
 which VST3 documents as `[UI-thread]`; that is why the sample rate can go that

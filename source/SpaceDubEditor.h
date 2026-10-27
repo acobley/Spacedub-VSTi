@@ -1,20 +1,23 @@
 //------------------------------------------------------------------------
 // SpaceDub - editor
 //
-// Recreates IDD_PROPPAGE from SpaceDubMidi.rc.  Every control keeps the
-// position it had in the Windows dialog: dialog units were converted with
-// the MS Sans Serif 8 pt base units the dialog was designed against
-// (x * 1.5, y * 1.625), and the whole layout is anchored to the original
-// 766 x 499 "background-all" bitmap.
+// THE BLACK PANEL (branch Polivoks, 27 Oct 2026): built from the layout
+// tables in SpaceDubLayout.h and drawn by SpaceDubPanelViews - no bitmaps.
+// It replaced the 766 x 499 bitmap panel that copied the DXi's
+// IDD_PROPPAGE pixel for pixel (see PORTING-NOTES section 5 for that one,
+// and the git history for its code).
 //
-// Each slider carries a value readout, in the spirit of the DXi's
-// IDC_*DISPLAY controls.  See PORTING-NOTES section 7.
+// What carried over unchanged: every number on the panel still comes from
+// readoutFor() and tempoText(), the link switches still mirror a move onto
+// the partner channel exactly as CSpaceDubMidiPropPage::OnVScroll did, and
+// the controller still calls updateControl() and refreshAllReadouts().
 //------------------------------------------------------------------------
 
 #pragma once
 
 #include "DelayLine.h"
-#include "SpaceDubControls.h"
+#include "SpaceDubLayout.h"
+#include "SpaceDubPanelViews.h"
 #include "SpaceDubParams.h"
 
 #include "public.sdk/source/vst/vstguieditor.h"
@@ -41,19 +44,16 @@ public:
 	/** Called by the controller when a parameter changes elsewhere. */
 	void updateControl (Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue normalized);
 
-	/** Rebuild every readout - used when the tempo or sample rate changes,
-	    since the delay readouts are quoted in milliseconds. */
+	/** Rebuild every reading and both screens - used when the tempo or
+	    sample rate changes, since the delay readings are in milliseconds. */
 	void refreshAllReadouts ();
 
-	/** The text shown under one slider. Public so it can be unit tested. */
+	/** The reading under one knob. Public so it can be unit tested. */
 	std::string readoutFor (Steinberg::Vst::ParamID tag) const;
 
-	/** The text drawn in one of the two text steppers (kMidiRate, kTempo).
-	    Public for the same reason; only valid once the editor is open. */
-	std::string stepperTextFor (Steinberg::Vst::ParamID tag) const;
-
-	/** What the tempo stepper shows for a given step. Whenever the host gives
-	    us a tempo that is what appears, because that is what the DSP uses. */
+	/** What the tempo screen shows for a given Tempo step. Whenever the host
+	    gives us a tempo that is what appears, because that is what the DSP
+	    uses. */
 	std::string tempoText (int step) const;
 
 	/** The tempo the delay is running at - host if there is one, otherwise the
@@ -61,33 +61,44 @@ public:
 	    processor makes, so the two cannot disagree. */
 	double runningTempo () const;
 
-	static const int kEditorWidth  = 766;
-	static const int kEditorHeight = 499;
+	/** One tap's delay in milliseconds for a channel's Delay parameter, by
+	    DelayLine::computeDelaySamples - the DSP's own mapping. */
+	double tapMilliseconds (Steinberg::Vst::ParamID delayTag, int* steps = nullptr) const;
+
+	static const int kEditorWidth  = Layout::kEditorWidth;
+	static const int kEditorHeight = Layout::kEditorHeight;
 
 private:
-	void addSlider (Steinberg::Vst::ParamID tag, int x, int y, int w, int h, bool vertical);
-	void addToggle (Steinberg::Vst::ParamID tag, int x, int y, int w, int h, VSTGUI::CBitmap* frames);
+	void addControl (const Layout::Control& c);
 	void registerControl (Steinberg::Vst::ParamID tag, VSTGUI::CControl* control);
 
 	/** Mirrors a value onto the partner channel when a link switch is on,
 	    exactly as CSpaceDubMidiPropPage::OnVScroll did. */
 	void applyLink (Steinberg::Vst::ParamID tag, Steinberg::Vst::ParamValue value);
 
-	void refreshReadout (Steinberg::Vst::ParamID tag);
+	/** Everything that depends on `tag` besides its own control. */
+	void refreshDependents (Steinberg::Vst::ParamID tag);
+	void refreshTapScope ();
+	void refreshTempoScreen ();
+	void refreshHeader ();
+
+	double normalizedOf (Steinberg::Vst::ParamID tag) const;
+	double internalOf (Steinberg::Vst::ParamID tag) const;
+	double sampleRate () const;
+	bool isOn (Steinberg::Vst::ParamID tag) const { return normalizedOf (tag) >= 0.5; }
 
 	SpaceDubController* mController = nullptr;
 
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mBackground;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mHandleV;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mHandleH;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mGrooveV;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mGrooveH;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mButtonSmall;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mButtonFilter;
-	VSTGUI::SharedPointer<VSTGUI::CBitmap> mButtonPower;
-
-	std::map<Steinberg::Vst::ParamID, VSTGUI::CControl*>    mControls;
-	std::map<Steinberg::Vst::ParamID, SdValueDisplay*>      mDisplays;
+	std::map<Steinberg::Vst::ParamID, VSTGUI::CControl*> mControls;
+	Panel::TapScope*    mTapScope = nullptr;
+	/** The tap feedback handles over the scope, [channel][tap - 1]; shown
+	    only while Taps Feedback is on. Raw pointers to views the frame owns. */
+	Panel::TapHandle*   mTapHandles[2][5] = {};
+	/** The handle being hovered or dragged, or kNumParams for none. */
+	Steinberg::Vst::ParamID mActiveHandle = kNumParams;
+	Panel::TempoScreen* mTempoScreen = nullptr;
+	Panel::StatusPill*  mStatusPill = nullptr;
+	Panel::TextLine*    mEngineLine = nullptr;
 	bool mUpdating = false;
 };
 

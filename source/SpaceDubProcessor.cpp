@@ -196,6 +196,13 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 	mDelayR.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainRight).toInternal (mParamTargets[kFeedbackOutGainRight])));
 	mDelayL.setTapsOutGain (static_cast<float> (paramDef (kTapsGainLeft).toInternal (mParamTargets[kTapsGainLeft])));
 	mDelayR.setTapsOutGain (static_cast<float> (paramDef (kTapsGainRight).toInternal (mParamTargets[kTapsGainRight])));
+
+	for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+	{
+		const ParamID l = tapFeedbackId (0, tap), r = tapFeedbackId (1, tap);
+		mDelayL.setTapFeedback (tap, static_cast<float> (paramDef (l).toInternal (mParamTargets[l])));
+		mDelayR.setTapFeedback (tap, static_cast<float> (paramDef (r).toInternal (mParamTargets[r])));
+	}
 }
 
 //------------------------------------------------------------------------
@@ -241,7 +248,6 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 	outBus.silenceFlags = 0;
 
 	const bool tapsOut      = paramDef (kTapsOut).toInternal (mParamTargets[kTapsOut]) >= 0.5;
-	const bool straightThru = paramDef (kMainOut).toInternal (mParamTargets[kMainOut]) >= 0.5;
 	const int  tapStart     = tapsOut ? 1 : DelayLine::kNumTaps;
 
 	// --- per-sample interpolation (the DXi's envelope deltas) ------------
@@ -275,6 +281,7 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 	Ramp fbR      = makeRamp (kFeedbackRight);
 	Ramp fgainL   = makeRamp (kFilterGainLeft);
 	Ramp fgainR   = makeRamp (kFilterGainRight);
+	Ramp dry      = makeRamp (kMainOut);   // Dry Level: how much input is mixed in
 
 	float tapsL[DelayLine::kTapArray] = {};
 	float tapsR[DelayLine::kTapArray] = {};
@@ -300,8 +307,16 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		mDelayL.process (inL, tapsL);
 		mDelayR.process (inR, tapsR);
 
-		float outL = straightThru ? inL : 0.f;
-		float outR = straightThru ? inR : 0.f;
+		// The tap meters: every tap's peak, whether or not Taps Out puts
+		// it in the output - the signal goes through it either way.
+		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+		{
+			mTapPeak[tap - 1] = std::max (mTapPeak[tap - 1], std::fabs (tapsL[tap]));
+			mTapPeak[tap + 4] = std::max (mTapPeak[tap + 4], std::fabs (tapsR[tap]));
+		}
+
+		float outL = inL * static_cast<float> (dry.value);
+		float outR = inR * static_cast<float> (dry.value);
 
 		// Tap-to-stereo matrix, verbatim from the DXi: tap 5 sits hard in
 		// its own channel, earlier taps walk towards the centre in 10 % steps.
@@ -328,6 +343,7 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		resoL.advance ();   resoR.advance ();
 		fbL.advance ();     fbR.advance ();
 		fgainL.advance ();  fgainR.advance ();
+		dry.advance ();
 	}
 }
 
@@ -382,11 +398,54 @@ tresult PLUGIN_API SpaceDubProcessor::process (ProcessData& data)
 			processAudio<Sample32> (data);
 	}
 
+	const bool running = !mBypass && paramDef (kEnable).toInternal (mParamTargets[kEnable]) >= 0.5;
+	publishTapMeters (data, running);
+
 	// The block has been rendered; this block's targets become the next
 	// block's starting point.
 	std::memcpy (mParams, mParamTargets, sizeof (mParams));
 
 	return kResultOk;
+}
+
+//------------------------------------------------------------------------
+/** THE TAP METERS, for the tap scope: each tap's peak this block becomes a
+    meter value (tapMeterValue: -60..+6 dBFS) that jumps up at once and
+    falls back at 20 dB a second, and goes to the controller through
+    outputParameterChanges - the only route from the audio thread, see the
+    host tempo above. About 30 times a second, and only the meters that
+    moved; switched off or bypassed, the meters fall to zero. */
+void SpaceDubProcessor::publishTapMeters (ProcessData& data, bool running)
+{
+	constexpr double kFallDbPerSecond = 20.0;
+	const double seconds = (mSampleRate > 0.0) ? data.numSamples / mSampleRate : 0.0;
+	const double fall = kFallDbPerSecond * seconds / (kTapMeterTopDb - kTapMeterFloorDb);
+
+	for (int i = 0; i < 10; ++i)
+	{
+		const double now = running ? tapMeterValue (mTapPeak[i]) : 0.0;
+		mTapMeter[i] = std::max (now, mTapMeter[i] - fall);
+		mTapPeak[i] = 0.f;
+	}
+
+	mMeterSamples += data.numSamples;
+	if (mMeterSamples < static_cast<int64> (mSampleRate / 30.0) || !data.outputParameterChanges)
+		return;
+	mMeterSamples = 0;
+
+	for (int i = 0; i < 10; ++i)
+	{
+		const double v = std::floor (mTapMeter[i] * 200.0 + 0.5) / 200.0;   // half-dB steps, roughly
+		if (v == mTapMeterSent[i])
+			continue;
+		int32 index = 0;
+		if (auto* queue = data.outputParameterChanges->addParameterData (kTapLevelOut + i, index))
+		{
+			int32 pointIndex = 0;
+			queue->addPoint (0, v, pointIndex);
+			mTapMeterSent[i] = v;
+		}
+	}
 }
 
 //------------------------------------------------------------------------
@@ -430,6 +489,13 @@ tresult PLUGIN_API SpaceDubProcessor::setState (IBStream* state)
 			mParams[i]       = v;
 			mParamTargets[i] = v;
 		}
+	}
+	// A state saved before a parameter existed: that one goes to its default,
+	// not to whatever this instance had.
+	for (int32 i = std::max<int32> (count, 0); i < kNumParams; ++i)
+	{
+		mParams[i]       = kParams[i].defaultNormalized ();
+		mParamTargets[i] = mParams[i];
 	}
 
 	int32 bypass = 0;

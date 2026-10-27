@@ -72,6 +72,17 @@ private:
 	    output parameter instead. */
 	void sendSampleRateToController ();
 	double mLastSentTempo = -1.0;
+
+	/** The tap meters (kTapLevelOut): each tap's peak this block, then the
+	    meter after its fall-back, and what was last published. Left taps
+	    1..5 are [0..4], right [5..9]. */
+	float  mTapPeak[10]      = {};
+	double mTapMeter[10]     = {};
+	double mTapMeterSent[10] = {};
+	/** Samples since the meters were last published - they go out about
+	    30 times a second, not every block. */
+	Steinberg::int64 mMeterSamples = 0;
+	void publishTapMeters (Steinberg::Vst::ProcessData& data, bool running);
 };
 
 //------------------------------------------------------------------------

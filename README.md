@@ -200,34 +200,39 @@ and there is a manual tempo for hosts that don't report one.
 
 ## The interface
 
-The window is the original 766 × 499 "Space Dub" panel. Every control sits
-where it sat in the Windows dialog — positions were converted from the
-`IDD_PROPPAGE` dialog units in `SpaceDubMidi.rc`.
+![The SpaceDub panel](doc/plugin-window.png)
 
-| Area | Controls |
+A 1200 × 640 black panel in the style of R2Synth's: matte black, white
+printing, boxed sections, black knurled knobs with printed scales, chicken-head
+selectors for every switch, small OLED screens, and every letter in a
+hand-drawn 70s sci-fi face. Everything is drawn as paths — there is no artwork
+in `resource/`. (Until the `Polivoks` branch the window was the original
+766 × 499 bitmap panel copied from the Windows dialog; it is in the git
+history.)
+
+| Section | What is there |
 |---|---|
-| Left / right column of vertical sliders | Delay, Taps Feedback (loop scale), Main Feedback, Cutoff Frequency, Resonance |
-| Top-right horizontal sliders | Taps out gain, Feedback out gain, Filter gain — Left row above, Right row below |
-| Row of buttons under the logo | Link Delay / Taps / Feedback / Filter — links the left and right sliders |
-| Buttons above them | Main Feedback on, Taps Feedback on, Taps Out |
-| Straight Thru | passes the dry signal to the output |
-| Power (top right) | the DXi "Enabled" switch |
-| Black panel (top right) | tempo readout and sync division — drag or click to change |
-| Narrow buttons at the bottom | Filter on, per channel |
+| **Echo** | the *tap scope*: each channel's five taps on a time axis — left up in green, right down in blue, both centred on the tap's time. Each tap's frame is the share heard on its own side; the fill inside it is **how much signal is going through that tap now** (a meter, −60 … +6 dBFS, the figure printed by the tap's number). The small frame over the other channel's bar is the share that crosses over, with a mark at the level crossing now. Taps that aren't in the output (Taps Out off) are dimmed; **F** marks the tap the filter replaces. **While Taps FB is on**, an amber handle sits over every tap: drag it to set how much that tap feeds back, 0–200 % of Loop Scale (the dim tick is 100 %, the original single amount; double-click returns there). Its value shows top right while you touch it |
+| **Clock** | Sync Rate (Off, 32nd … Whole), the tempo screen (the host's tempo when it gives one), the manual Tempo knob (Auto = follow the host), **Dry** — how much of the input is mixed in with the echoes, 0–100 % (the DXi's Straight Thru switch; the DRY line on the tap scope follows it) — Taps Out, and the **Enabled** and **Bypass** lamps |
+| **Delay** | Delay and Loop Scale, a row for L over a row for R |
+| **Feedback** | Feedback L / R, and the Main FB and Taps FB switches |
+| **Filter** | Cutoff, Resonance, Gain and On, L over R |
+| **Output** | Taps Gain and FB Out, L over R |
 
-Sliders: drag, or hold **Shift** for fine adjustment; the mouse wheel works
-too. The tempo and sync readouts advance one step per click and can be
-dragged vertically.
+The red **LINK** switches on the line between the L and R rows tie the two
+channels together: Delay; Loop Scale (and Taps Gain); Feedback (and FB Out);
+the Filter.
 
-Every slider has a value readout under it — the delay sliders in milliseconds
-(plus the number of sync steps when tempo-locked), the cutoff sliders in hertz,
-the rest as percentages. Each sits on a small black plate with a thin white
-border, so it stays readable against the panel artwork, and they are always
-visible — no hovering needed. The
-switches don't need one: their colour shows their state.
+Knobs: drag up and down, hold **Shift** for fine adjustment, double-click for
+the default; the mouse wheel works too. Selectors: click a position, or click
+the knob to step on. Lamps: click to toggle.
 
-> **Note** — as in the original, the **Power** switch is *off* by default and
-> the plug-in passes audio straight through until you turn it on.
+Every knob shows its value under it — the delay as the whole echo in
+milliseconds (plus the number of sync steps when tempo-locked), the cutoff in
+hertz, the rest as percentages. The tap scope quotes one tap's delay.
+
+> **Note** — as in the original, **Enabled** is *off* by default and the
+> plug-in passes audio straight through until you press it. The header says so.
 
 ## Layout of this project
 
@@ -240,13 +245,18 @@ source/
   SpaceDubProcessor.* audio processing (was CSpaceDubMidi::Process)
   SpaceDubController.*parameter/host plumbing (was CMediaParams)
   SpaceDubEditor.*    the window (was CSpaceDubMidiPropPage)
-  SpaceDubControls.*  sliders/buttons (were msctls_trackbar32 and MFC buttons)
+  SpaceDubLayout.h    the panel's layout, as data
+  SpaceDubPanelViews.* knobs, selectors, lamps, screens - all paths
+  SciFiLettering.h    the 70s sci-fi lettering (shared with R2Synth)
+  PanelWear.h         the panel's dust and scratches (shared with R2Synth)
   SpaceDubEntry.cpp   plug-in factory (was PlugInApp.cpp)
 resource/
-  *.png               UI artwork, converted from res/*.bmp
   au-info.plist       Audio Unit identity (type/subtype/manufacturer codes)
 tests/
   DelayLineTests.cpp  standalone DSP checks - no SDK, no host needed
+  LayoutTests.cpp     the panel's layout: everything on it, nothing overlaps
+tools/
+  render-panel/       draws the real editor to doc/plugin-window.png (Linux)
 external/
   vst3sdk/            the VST3 SDK (fetched, not in version control)
   AudioUnitSDK/       Apple's AudioUnitSDK, for the AU wrapper (likewise)

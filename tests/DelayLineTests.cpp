@@ -25,6 +25,7 @@
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
+#include <vector>
 using namespace SpaceDub;
 
 static int fails = 0;
@@ -98,6 +99,29 @@ int main () {
     }
     std::printf("   max deviation %g\n", worst);
     chk(worst < 1e-3, "setFrequency disagrees with computeCutoffHz");
+
+    // 6. Per-tap feedback (branch Polivoks). Render an impulse with taps
+    //    feedback on and compare: every tap at 1 must be bit-identical to
+    //    the DXi's single amount; every tap at 0 identical to taps feedback
+    //    off; and one tap turned up must change the result.
+    std::printf("6. per-tap feedback\n");
+    auto render = [](bool loops, const float* g) {
+        DelayLine d; d.setSampleRate(48000);
+        d.setDelay(0.05f); d.setScale(0.6f); d.setLoopsFeedback(loops);
+        if (g) for (int t = 1; t <= DelayLine::kNumTaps; ++t) d.setTapFeedback(t, g[t - 1]);
+        std::vector<float> out;
+        float taps[DelayLine::kTapArray] = {};
+        for (int i = 0; i < 4000; ++i) {
+            d.process(i == 0 ? 1.f : 0.f, taps);
+            for (int t = 1; t <= DelayLine::kNumTaps; ++t) out.push_back(taps[t]);
+        }
+        return out;
+    };
+    const float ones[5] = {1, 1, 1, 1, 1}, zeros[5] = {0, 0, 0, 0, 0}, louder[5] = {1, 1, 2, 1, 1};
+    chk(render(true, ones) == render(true, nullptr), "per-tap feedback at 100 % changed the sound");
+    chk(render(true, zeros) == render(false, nullptr), "per-tap feedback at 0 % is not taps feedback off");
+    chk(render(true, louder) != render(true, ones), "turning one tap up changed nothing");
+    std::printf("   100 %% = the DXi, 0 %% = off, one tap up = different\n");
 
     std::printf(fails ? "\n%d CHECK(S) FAILED\n" : "\nall checks passed\n", fails);
     return fails != 0;

@@ -1,18 +1,17 @@
 # doc
 
-**[plugin-window.png](plugin-window.png)** — the editor as a host shows it,
-composited from the shipped artwork in `../resource` by
-[`render-editor.py`](render-editor.py). Every parameter sits at its default
-from `SpaceDubParams.cpp` — so `Enabled` is **off**, as the DXi shipped it —
-and the readouts are quoted for a host running at 48 kHz and 120 BPM, which is
-why the tempo control shows the host's tempo rather than "Tempo Sync".
+**[plugin-window.png](plugin-window.png)** — the editor, drawn by the
+editor's own code: [`../tools/render-panel`](../tools/render-panel/build.sh)
+builds `SpaceDubEditor`, `SpaceDubPanelViews` and the controller against
+VSTGUI's cairo back end and draws the window into a PNG at 2×, with no host
+and no window server. So it cannot go stale the way a mock-up can — re-run it
+after changing the panel:
 
-It is a mock-up rather than a screenshot: the script reproduces in Python what
-`SpaceDubEditor::open()` positions and what `SdSlider`, `SdToggle`,
-`SdTextStepper` and `SdValueDisplay` draw, including the top-is-maximum
-vertical sliders and the plate sizing in the readouts. Move a control in the
-editor and it must be moved here too, or the picture quietly goes stale. Needs
-Pillow; run it as `python3 doc/render-editor.py`.
+    tools/render-panel/build.sh doc/plugin-window.png 0=1
+
+Every parameter sits at its default from `SpaceDubParams.cpp` except
+`Enabled`, switched on (`0=1`) so the tap scope is lit; with no host the
+sample rate is 44.1 kHz and the tempo screen shows the manual tempo.
 
 **[signal-routing.png](signal-routing.png)** — how audio flows through the
 plug-in. [`signal-routing.svg`](signal-routing.svg) is the source; the PNG is

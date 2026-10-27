@@ -41,7 +41,17 @@ const ParamDef kParams[kNumParams] = {
 	{kFilterGainRight,      "Filter Gain Right",     "%",   ParamType::Float,   0,   500,  250,  0,   3,    0,    true },
 	{kMidiRate,             "Sync Rate",             "",    ParamType::Enum,    0,   7,    0,    0,   7,    7,    false},
 	{kTempo,                "Tempo",                 "BPM", ParamType::Enum,    0,   300,  100,  0,   300,  300,  false},
-	{kMainOut,              "Straight Thru",         "",    ParamType::Bool,    0,   1,    1,    0,   1,    1,    false},
+	{kMainOut,              "Dry Level",             "%",   ParamType::Float,   0,   100,  100,  0,   1,    0,    true },
+	{kTapFeedbackLeft1,     "Tap 1 Feedback Left",   "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackLeft2,     "Tap 2 Feedback Left",   "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackLeft3,     "Tap 3 Feedback Left",   "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackLeft4,     "Tap 4 Feedback Left",   "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackLeft5,     "Tap 5 Feedback Left",   "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackRight1,    "Tap 1 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackRight2,    "Tap 2 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackRight3,    "Tap 3 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackRight4,    "Tap 4 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kTapFeedbackRight5,    "Tap 5 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
 };
 
 //------------------------------------------------------------------------
