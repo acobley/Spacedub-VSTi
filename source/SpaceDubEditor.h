@@ -91,6 +91,11 @@ private:
 
 	std::map<Steinberg::Vst::ParamID, VSTGUI::CControl*> mControls;
 	Panel::TapScope*    mTapScope = nullptr;
+	/** The tap feedback handles over the scope, [channel][tap - 1]; shown
+	    only while Taps Feedback is on. Raw pointers to views the frame owns. */
+	Panel::TapHandle*   mTapHandles[2][5] = {};
+	/** The handle being hovered or dragged, or kNumParams for none. */
+	Steinberg::Vst::ParamID mActiveHandle = kNumParams;
 	Panel::TempoScreen* mTempoScreen = nullptr;
 	Panel::StatusPill*  mStatusPill = nullptr;
 	Panel::TextLine*    mEngineLine = nullptr;

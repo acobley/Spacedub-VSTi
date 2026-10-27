@@ -248,6 +248,12 @@ struct TapPicture
 	    processor's meters (kTapLevelOut), 0..1 = -60..+6 dBFS.
 	    [channel][tap - 1]. */
 	double level[2][5] = {};
+	/** Taps Feedback is on: the scope says so, and the editor shows a
+	    TapHandle over each tap. */
+	bool   tapsFeedback = false;
+	/** While a handle is being touched: what it is set to, shown top right
+	    in amber in place of the annotation. */
+	std::string handleText;
 };
 
 /** THE TAP SCOPE - the echo section's OLED.
@@ -294,9 +300,62 @@ public:
 	    for the tests. */
 	static void axisFor (double tapMsLeft, double tapMsRight, double& spanMs, double& stepMs);
 
+	/** Where a TapHandle goes for tap `n` (1..5) of `side` (0 left, 1
+	    right), in the frame's coordinates: a column 18 px wide centred on
+	    the tap, from the axis to the full height of a frame - up for the
+	    left, down for the right. */
+	VSTGUI::CRect handleRect (int side, int n) const;
+
 private:
 	TapPicture mPicture;
 	Wear::GlassWear mWear;
+};
+
+//------------------------------------------------------------------------
+/** A TAP FEEDBACK HANDLE - one per tap per channel, laid over the tap
+    scope while Taps Feedback is on: an amber bar across the tap that
+    sets how much that tap feeds back (0..200 % of Loop Scale; the dim
+    tick is 100 %, the DXi's amount). Its column runs from the axis
+    outwards, so 0 % is at the axis and 200 % at the far end, on the
+    channel's own side.
+
+      drag       up and down (away from the axis increases), relative
+      Shift      ten times finer
+      double-click   100 %
+      wheel      one per cent a click
+
+    While it is hovered or dragged the editor shows its value on the
+    scope (setActiveHandler). */
+class TapHandle : public VSTGUI::CControl
+{
+public:
+	TapHandle (const VSTGUI::CRect& size, VSTGUI::IControlListener* listener, int32_t tag, int side);
+
+	/** Called with true when the pointer comes over it or a drag starts,
+	    false when both are over. */
+	void setActiveHandler (std::function<void (bool)> handler) { mActive = std::move (handler); }
+	bool isActive () const { return mHover || mDragging; }
+
+	void draw (VSTGUI::CDrawContext* context) override;
+
+	void onMouseEnterEvent (VSTGUI::MouseEnterEvent& event) override;
+	void onMouseExitEvent (VSTGUI::MouseExitEvent& event) override;
+	void onMouseDownEvent (VSTGUI::MouseDownEvent& event) override;
+	void onMouseMoveEvent (VSTGUI::MouseMoveEvent& event) override;
+	void onMouseUpEvent (VSTGUI::MouseUpEvent& event) override;
+	void onMouseCancelEvent (VSTGUI::MouseCancelEvent& event) override;
+	void onMouseWheelEvent (VSTGUI::MouseWheelEvent& event) override;
+
+	CLASS_METHODS (TapHandle, VSTGUI::CControl)
+
+private:
+	void tellActive (bool wasActive);
+
+	int  mSide;
+	bool mHover = false;
+	bool mDragging = false;
+	VSTGUI::CCoord mLastY = 0.;
+	std::function<void (bool)> mActive;
 };
 
 //------------------------------------------------------------------------

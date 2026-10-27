@@ -888,6 +888,32 @@ void drawGlowLettering (CDrawContext* context, const std::string& text, const Le
 //------------------------------------------------------------------------
 // TapScope
 //------------------------------------------------------------------------
+namespace {
+
+/** The tap feedback handles' colour: amber, so they never read as a level. */
+const CColor kFeedbackAmber (255, 178, 58, 255);
+
+/** The plot inside the scope - shared by the drawing and handleRect(), so
+    a handle cannot drift off its tap. */
+struct ScopeGeometry
+{
+	double pl, pr, top, bottom, mid, half;
+};
+
+ScopeGeometry scopeGeometry (const CRect& r)
+{
+	ScopeGeometry g {};
+	g.pl = r.left + 34.;
+	g.pr = r.right - 18.;
+	g.top = r.top + 24.;
+	g.bottom = r.bottom - 22.;
+	g.mid = (g.top + g.bottom) / 2.;
+	g.half = (g.bottom - g.top) / 2.;
+	return g;
+}
+
+} // anonymous namespace
+
 TapScope::TapScope (const CRect& size)
 : CView (size)
 {
@@ -910,6 +936,17 @@ void TapScope::axisFor (double tapMsLeft, double tapMsRight, double& spanMs, dou
 	spanMs = std::ceil (target / stepMs) * stepMs;
 }
 
+CRect TapScope::handleRect (int side, int n) const
+{
+	const ScopeGeometry geo = scopeGeometry (getViewSize ());
+	double span = 0.0, step = 0.0;
+	axisFor (mPicture.tapMs[0], mPicture.tapMs[1], span, step);
+	const double x = geo.pl + (geo.pr - geo.pl) * n * mPicture.tapMs[side] / span;
+	const double h = geo.half * 0.92;
+	return side ? CRect (x - 9., geo.mid + 1., x + 9., geo.mid + h + 3.)
+	            : CRect (x - 9., geo.mid - h - 3., x + 9., geo.mid - 1.);
+}
+
 void TapScope::draw (CDrawContext* context)
 {
 	using namespace Layout;
@@ -924,14 +961,20 @@ void TapScope::draw (CDrawContext* context)
 
 	// ---- the lettering round the edge --------------------------------------
 	drawLettering (context, "TAP SCOPE  /  LEVELS IN DBFS", kTextScreen, Palette::kScreenText, r.left + 8., r.top + 11.);
-	if (!pic.annotation.empty ())
+	if (pic.tapsFeedback)
+	{
+		const double x = r.left + 8. + Lettering::width ("TAP SCOPE  /  LEVELS IN DBFS  /  ", kTextScreen);
+		drawLettering (context, "TAP FEEDBACK", kTextScreen, kFeedbackAmber, x, r.top + 11.);
+	}
+	if (!pic.handleText.empty ())
+		drawLettering (context, pic.handleText, kTextScreen, kFeedbackAmber, r.right - 8., r.top + 11., Align::Right);
+	else if (!pic.annotation.empty ())
 		drawLettering (context, pic.annotation, kTextScreen, pic.enabled ? Palette::kTraceLeft : Palette::kRed,
 		               r.right - 8., r.top + 11., Align::Right);
 
 	// ---- the plot ----------------------------------------------------------
-	const double pl = r.left + 34., pr = r.right - 18.;
-	const double top = r.top + 24., bottom = r.bottom - 22.;
-	const double mid = (top + bottom) / 2., half = (bottom - top) / 2.;
+	const ScopeGeometry geo = scopeGeometry (r);
+	const double pl = geo.pl, pr = geo.pr, top = geo.top, bottom = geo.bottom, mid = geo.mid, half = geo.half;
 
 	double span = 0.0, step = 0.0;
 	axisFor (pic.tapMs[0], pic.tapMs[1], span, step);
@@ -1078,6 +1121,139 @@ void TapScope::draw (CDrawContext* context)
 
 	drawGlassTop (context, r, mWear);
 	setDirty (false);
+}
+
+//------------------------------------------------------------------------
+// TapHandle
+//------------------------------------------------------------------------
+TapHandle::TapHandle (const CRect& size, IControlListener* listener, int32_t tag, int side)
+: CControl (size, listener, tag)
+, mSide (side)
+{
+}
+
+void TapHandle::tellActive (bool wasActive)
+{
+	if (wasActive != isActive () && mActive)
+		mActive (isActive ());
+	invalid ();
+}
+
+void TapHandle::draw (CDrawContext* context)
+{
+	const CRect r = getViewSize ();
+	context->setDrawMode (kAntiAliasing | kNonIntegralMode);
+
+	// 0 % at the axis end of the column, 200 % at the far end
+	const double inner = 2.0, usable = r.getHeight () - 4.0;
+	auto yOf = [&] (double v) { return mSide ? r.top + inner + v * usable : r.bottom - inner - v * usable; };
+	const double cx = (r.left + r.right) / 2.;
+
+	// the dim tick at 100 %: the DXi's amount
+	const double y100 = yOf (0.5);
+	strokeLine (context, CPoint (cx - 8., y100), CPoint (cx - 6., y100), withAlpha (kFeedbackAmber, 110), 1.);
+	strokeLine (context, CPoint (cx + 6., y100), CPoint (cx + 8., y100), withAlpha (kFeedbackAmber, 110), 1.);
+
+	// the handle: an amber bar across the tap, brighter while touched
+	const double y = yOf (std::clamp (static_cast<double> (getValueNormalized ()), 0.0, 1.0));
+	const bool active = isActive ();
+	if (active)
+		strokeLine (context, CPoint (cx - 8., y), CPoint (cx + 8., y), withAlpha (kFeedbackAmber, 70), 6.);
+	strokeLine (context, CPoint (cx - 8., y), CPoint (cx + 8., y), CColor (0, 0, 0, 200), 4.);
+	strokeLine (context, CPoint (cx - 7., y), CPoint (cx + 7., y), withAlpha (kFeedbackAmber, active ? 255 : 220),
+	            2.2);
+
+	setDirty (false);
+}
+
+void TapHandle::onMouseEnterEvent (MouseEnterEvent& event)
+{
+	const bool was = isActive ();
+	mHover = true;
+	tellActive (was);
+	event.consumed = true;
+}
+
+void TapHandle::onMouseExitEvent (MouseExitEvent& event)
+{
+	const bool was = isActive ();
+	mHover = false;
+	tellActive (was);
+	event.consumed = true;
+}
+
+void TapHandle::onMouseDownEvent (MouseDownEvent& event)
+{
+	if (!event.buttonState.isLeft ())
+		return;
+	if (event.clickCount >= 2)
+	{
+		beginEdit ();
+		setValue (getDefaultValue ());
+		valueChanged ();
+		endEdit ();
+		invalid ();
+		event.consumed = true;
+		return;
+	}
+	const bool was = isActive ();
+	mDragging = true;
+	mLastY = event.mousePosition.y;
+	beginEdit ();
+	tellActive (was);
+	event.consumed = true;
+}
+
+void TapHandle::onMouseMoveEvent (MouseMoveEvent& event)
+{
+	if (!mDragging)
+		return;
+	const CCoord dy = event.mousePosition.y - mLastY;
+	if (std::fabs (dy) < 0.5)
+		return;
+	mLastY = event.mousePosition.y;
+	// away from the axis increases: up for the left, down for the right
+	const double usable = std::max (8.0, getViewSize ().getHeight () - 4.0);
+	const float scale = event.modifiers.has (ModifierKey::Shift) ? 0.1f : 1.f;
+	const float delta = static_cast<float> ((mSide ? dy : -dy) / usable) * scale;
+	setValueNormalized (std::clamp (getValueNormalized () + delta, 0.f, 1.f));
+	valueChanged ();
+	invalid ();
+	event.consumed = true;
+}
+
+void TapHandle::onMouseUpEvent (MouseUpEvent& event)
+{
+	if (!mDragging)
+		return;
+	const bool was = isActive ();
+	mDragging = false;
+	endEdit ();
+	tellActive (was);
+	event.consumed = true;
+}
+
+void TapHandle::onMouseCancelEvent (MouseCancelEvent& event)
+{
+	if (mDragging)
+	{
+		const bool was = isActive ();
+		mDragging = false;
+		endEdit ();
+		tellActive (was);
+	}
+	event.consumed = true;
+}
+
+void TapHandle::onMouseWheelEvent (MouseWheelEvent& event)
+{
+	const float step = event.modifiers.has (ModifierKey::Shift) ? 0.0025f : 0.005f;   // 0.5 % / 1 % of 200 %
+	beginEdit ();
+	setValueNormalized (std::clamp (getValueNormalized () + static_cast<float> (event.deltaY) * step, 0.f, 1.f));
+	valueChanged ();
+	endEdit ();
+	invalid ();
+	event.consumed = true;
 }
 
 //------------------------------------------------------------------------

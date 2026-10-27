@@ -68,6 +68,7 @@ identical values to the original.**
 | `PARAM_MIDIRATE` | Midi rate | Sync Rate | 0–7 | 0–7 | 0 (Off) |
 | `PARAM_TEMPO` | Tempo | Tempo | 0–300 | 0–300 | 100 |
 | `PARAM_MAINOUT` | Main Out | **Dry Level** (was Straight Thru) | 0–100 % | 0–1 | 100 |
+| — | — | **Tap 1–5 Feedback Left / Right** (new, ids 29–38) | 0–200 % | 0–2 | 100 |
 | — | — | **Bypass** (new, id 1000) | 0/1 | — | 0 |
 | — | — | **Host Tempo** (new, id 1001, read-only) | 0–300 | — | 0 |
 
@@ -77,6 +78,17 @@ input mixed in with the echoes, ramped per sample like the other smoothed
 parameters. It keeps the id and the normalised ends, so a preset or automation
 saved with Straight Thru on loads as 100 % and off as 0 % — what the switch
 did. The default is still 100 %.
+
+`Tap n Feedback Left/Right` are new on the `Polivoks` branch. With Taps
+Feedback on, `DelayLine::process` regenerates each tap into the one before it
+by `mScale` (Loop Scale) — one amount for all five taps in the DXi. Each tap
+now multiplies that by its own level, `mTapFeedback[ix]`; at the default of
+100 % the product is exactly `mScale`, so the sound is bit-identical to the
+original (`tests/DelayLineTests.cpp` check 6 renders it both ways). They are
+set per block, not ramped, and Link Loop Scale links them left to right. They
+are not on the panel's table: they are handles on the tap scope, shown while
+Taps Feedback is on. A state saved before they existed loads them at their
+default — both `setState`s now reset any parameter the stream does not carry.
 
 `Host Tempo` is not a control. It is the processor reporting the tempo the
 **host** supplied — zero when it supplied none — so the editor can show it and

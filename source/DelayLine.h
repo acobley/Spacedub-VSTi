@@ -53,6 +53,9 @@ public:
 
 	// -- parameter setters; all take the plug-in's *internal* ranges ------
 	void  setScale (float v)                { mScale = v; }
+	/** How much tap `tap` (1..kNumTaps) feeds back when loops feedback is
+	    on, as a multiple of the scale: 1 is the DXi's regeneration. */
+	void  setTapFeedback (int tap, float g)  { if (tap >= 1 && tap <= kNumTaps) mTapFeedback[tap] = g; }
 	/** delay: 0..1.  Returns the resulting delay time in seconds. */
 	float setDelay (float delay);
 
@@ -99,6 +102,7 @@ private:
 	int    mDelaySamples = 1;
 
 	float  mScale             = 0.5f;
+	float  mTapFeedback[kTapArray] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f };
 	float  mMainFeedbackValue = 0.5f;
 	float  mMainOutGain       = 1.0f;
 	float  mTapsOutGain       = 1.0f;

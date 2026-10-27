@@ -55,6 +55,22 @@ enum Param : Steinberg::Vst::ParamID
 	                        // of the input mixed in with the echoes. Same id and the same
 	                        // normalised ends, so a saved "on" loads as 100 % and "off" as 0.
 
+	// How much each tap feeds back when Taps Feedback is on (branch
+	// Polivoks): DelayLine multiplies the Loop Scale regeneration by these,
+	// one per tap per channel. 0..200 %, default 100 % - exactly the DXi's
+	// regeneration, which had one amount for all five taps. Set from the
+	// handles on the tap scope.
+	kTapFeedbackLeft1,
+	kTapFeedbackLeft2,
+	kTapFeedbackLeft3,
+	kTapFeedbackLeft4,
+	kTapFeedbackLeft5,
+	kTapFeedbackRight1,
+	kTapFeedbackRight2,
+	kTapFeedbackRight3,
+	kTapFeedbackRight4,
+	kTapFeedbackRight5,
+
 	kNumParams,
 
 	kBypass = 1000,         // standard VST3 bypass (kIsBypass)
@@ -105,6 +121,17 @@ inline double tapMeterDb (double value)
 inline Steinberg::Vst::ParamID tapLevelId (int channel, int tap)
 {
 	return static_cast<Steinberg::Vst::ParamID> (kTapLevelOut + channel * 5 + (tap - 1));
+}
+
+/** A tap's feedback level parameter: channel 0 left, 1 right; tap 1..5. */
+inline Steinberg::Vst::ParamID tapFeedbackId (int channel, int tap)
+{
+	return static_cast<Steinberg::Vst::ParamID> (kTapFeedbackLeft1 + channel * 5 + (tap - 1));
+}
+
+inline bool isTapFeedback (Steinberg::Vst::ParamID id)
+{
+	return id >= kTapFeedbackLeft1 && id <= kTapFeedbackRight5;
 }
 
 inline bool isTapLevel (Steinberg::Vst::ParamID id)

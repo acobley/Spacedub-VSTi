@@ -196,6 +196,13 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 	mDelayR.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainRight).toInternal (mParamTargets[kFeedbackOutGainRight])));
 	mDelayL.setTapsOutGain (static_cast<float> (paramDef (kTapsGainLeft).toInternal (mParamTargets[kTapsGainLeft])));
 	mDelayR.setTapsOutGain (static_cast<float> (paramDef (kTapsGainRight).toInternal (mParamTargets[kTapsGainRight])));
+
+	for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+	{
+		const ParamID l = tapFeedbackId (0, tap), r = tapFeedbackId (1, tap);
+		mDelayL.setTapFeedback (tap, static_cast<float> (paramDef (l).toInternal (mParamTargets[l])));
+		mDelayR.setTapFeedback (tap, static_cast<float> (paramDef (r).toInternal (mParamTargets[r])));
+	}
 }
 
 //------------------------------------------------------------------------
@@ -482,6 +489,13 @@ tresult PLUGIN_API SpaceDubProcessor::setState (IBStream* state)
 			mParams[i]       = v;
 			mParamTargets[i] = v;
 		}
+	}
+	// A state saved before a parameter existed: that one goes to its default,
+	// not to whatever this instance had.
+	for (int32 i = std::max<int32> (count, 0); i < kNumParams; ++i)
+	{
+		mParams[i]       = kParams[i].defaultNormalized ();
+		mParamTargets[i] = mParams[i];
 	}
 
 	int32 bypass = 0;

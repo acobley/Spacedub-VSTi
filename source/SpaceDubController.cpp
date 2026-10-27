@@ -141,6 +141,9 @@ tresult PLUGIN_API SpaceDubController::setComponentState (IBStream* state)
 		if (i < kNumParams)
 			setParamNormalized (static_cast<ParamID> (i), v);
 	}
+	// A state saved before a parameter existed: its default (see the processor).
+	for (int32 i = std::max<int32> (count, 0); i < kNumParams; ++i)
+		setParamNormalized (static_cast<ParamID> (i), kParams[i].defaultNormalized ());
 
 	int32 bypass = 0;
 	if (streamer.readInt32 (bypass))

@@ -9,7 +9,8 @@
 //
 // What it pins down:
 //
-//   1. Every parameter is on the panel exactly once (Bypass too).
+//   1. Every parameter is on the panel exactly once (Bypass too) - bar
+//      the ten tap feedback levels, which are handles on the tap scope.
 //   2. Every control is inside its own section, and inside the panel.
 //   3. No two controls overlap, and none overlaps a screen's cut-out.
 //   4. Every knob's label - and the widest reading it can show - fits its
@@ -85,6 +86,10 @@ int main ()
 	for (Steinberg::Vst::ParamID id = 0; id <= kNumParams; ++id)
 	{
 		const Steinberg::Vst::ParamID tag = (id == kNumParams) ? Steinberg::Vst::ParamID (kBypass) : id;
+		// the per-tap feedback lives on the tap scope, as handles placed at
+		// the taps - not in the table; there must be ten of them
+		if (isTapFeedback (tag))
+			continue;
 		int n = 0;
 		for (const auto& c : kControls)
 			n += (c.tag == tag);
@@ -214,6 +219,13 @@ int main ()
 		for (int tap = 1; tap <= 5; ++tap)
 			chk (isTapLevel (tapLevelId (ch, tap)), "a tap level id is out of range");
 	chk (!isTapLevel (kHostTempoOut) && !isTapLevel (kTapLevelOutEnd), "isTapLevel takes a neighbour");
+	int feedbackIds = 0;
+	for (Steinberg::Vst::ParamID id = 0; id < kNumParams; ++id)
+		feedbackIds += isTapFeedback (id);
+	chk (feedbackIds == 10, "there are not ten tap feedback parameters");
+	for (int ch = 0; ch < 2; ++ch)
+		for (int tap = 1; tap <= 5; ++tap)
+			chk (isTapFeedback (tapFeedbackId (ch, tap)), "a tap feedback id is out of range");
 
 	if (fails)
 	{

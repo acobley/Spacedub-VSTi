@@ -209,6 +209,27 @@ bool PLUGIN_API SpaceDubEditor::open (void* parent, const PlatformType& platform
 	mTapScope->setWear (Wear::glassWear (0));
 	frame->addView (mTapScope);
 
+	// ---- the tap feedback handles, over the scope; placed and shown by
+	//      refreshTapScope(), which knows where the taps are -------------------
+	for (int ch = 0; ch < 2; ++ch)
+	{
+		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+		{
+			const ParamID tag = tapFeedbackId (ch, tap);
+			auto* handle = new Panel::TapHandle (CRect (0, 0, 18, 40), this, static_cast<int32_t> (tag), ch);
+			handle->setActiveHandler ([this, tag] (bool active) {
+				if (active)
+					mActiveHandle = tag;
+				else if (mActiveHandle == tag)
+					mActiveHandle = kNumParams;
+				refreshTapScope ();
+			});
+			handle->setVisible (false);
+			mTapHandles[ch][tap - 1] = handle;
+			registerControl (tag, handle);
+		}
+	}
+
 	mTempoScreen = new Panel::TempoScreen (toCRect (Layout::kTempoScreen));
 	mTempoScreen->setWear (Wear::glassWear (1));
 	frame->addView (mTempoScreen);
@@ -234,6 +255,10 @@ void PLUGIN_API SpaceDubEditor::close ()
 	// owns: clear them before the frame goes, and never use them after.
 	mControls.clear ();
 	mTapScope = nullptr;
+	for (auto& side : mTapHandles)
+		for (auto*& h : side)
+			h = nullptr;
+	mActiveHandle = kNumParams;
 	mTempoScreen = nullptr;
 	mStatusPill = nullptr;
 	mEngineLine = nullptr;
@@ -316,6 +341,12 @@ void SpaceDubEditor::applyLink (ParamID tag, ParamValue value)
 		{kResonanceLeft,       kResonanceRight,       kLinkFilters},
 		{kFilterGainLeft,      kFilterGainRight,      kLinkFilters},
 		{kFilterLeftEnable,    kFilterRightEnable,    kLinkFilters},
+		// the per-tap feedback goes with Loop Scale, the amount it multiplies
+		{kTapFeedbackLeft1,    kTapFeedbackRight1,    kLinkLoops},
+		{kTapFeedbackLeft2,    kTapFeedbackRight2,    kLinkLoops},
+		{kTapFeedbackLeft3,    kTapFeedbackRight3,    kLinkLoops},
+		{kTapFeedbackLeft4,    kTapFeedbackRight4,    kLinkLoops},
+		{kTapFeedbackLeft5,    kTapFeedbackRight5,    kLinkLoops},
 	};
 
 	if (!mController)
@@ -399,6 +430,7 @@ void SpaceDubEditor::refreshDependents (ParamID tag)
 		case kDelayRight:
 		case kTapsOut:
 		case kMainOut:
+		case kLoopsFeedbackEnable:
 		case kFilterLeftEnable:
 		case kFilterRightEnable:
 			refreshTapScope ();
@@ -411,8 +443,9 @@ void SpaceDubEditor::refreshDependents (ParamID tag)
 			break;
 
 		default:
-			// the processor's tap meters, about 30 times a second
-			if (isTapLevel (tag))
+			// the processor's tap meters, about 30 times a second; a tap's
+			// feedback (its value on the scope while its handle is touched)
+			if (isTapLevel (tag) || isTapFeedback (tag))
 				refreshTapScope ();
 			break;
 	}
@@ -447,7 +480,36 @@ void SpaceDubEditor::refreshTapScope ()
 		std::snprintf (buf, sizeof (buf), "L %.0f / R %.0f ms a tap", pic.tapMs[0], pic.tapMs[1]);
 	pic.annotation = Panel::upper (buf);
 
+	// The feedback handles: shown while Taps Feedback is on, each over its tap.
+	pic.tapsFeedback = isOn (kLoopsFeedbackEnable);
+	if (pic.tapsFeedback && isTapFeedback (mActiveHandle))
+	{
+		const int index = static_cast<int> (mActiveHandle - kTapFeedbackLeft1);
+		char t[64] = {};
+		std::snprintf (t, sizeof (t), "%s tap %d feedback %s", index < 5 ? "L" : "R", index % 5 + 1,
+		               readoutFor (mActiveHandle).c_str ());
+		pic.handleText = Panel::upper (t);
+	}
+
 	mTapScope->setPicture (pic);
+
+	for (int ch = 0; ch < 2; ++ch)
+	{
+		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+		{
+			auto* h = mTapHandles[ch][tap - 1];
+			if (!h)
+				continue;
+			const CRect place = mTapScope->handleRect (ch, tap);
+			if (place != h->getViewSize ())
+			{
+				h->setViewSize (place);
+				h->setMouseableArea (place);
+			}
+			if (h->isVisible () != pic.tapsFeedback)
+				h->setVisible (pic.tapsFeedback);
+		}
+	}
 }
 
 //------------------------------------------------------------------------
