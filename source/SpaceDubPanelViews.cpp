@@ -959,22 +959,35 @@ void TapScope::draw (CDrawContext* context)
 	drawLettering (context, "DRY", kTextScreenSm, Palette::kScreenText, pl + 6., top + 2.);
 
 	// ---- the taps ---------------------------------------------------------------
+	// Both channels' bars are CENTRED ON THE TAP'S TIME, so a left and a right
+	// tap at the same time sit on one vertical line. Each tap's share on the
+	// OTHER side is drawn second, over the other channel's bar, as an outline
+	// with a level mark at its top - so it reads as "this much of it crosses
+	// over" without a bar of its own beside the real one.
+	constexpr double kHalfBar = 5.0;
 	const bool sameTimes = std::fabs (pic.tapMs[0] - pic.tapMs[1]) < 0.5;
+	struct Tap
+	{
+		double x, h, leak;
+		bool heard;
+	};
+	auto tapOf = [&] (int side, int n) {
+		const double own = 1.0 - (DelayLineTaps - n) / 10.0;   // DelayLine's matrix
+		return Tap { xOf (n * pic.tapMs[side]), own * half * 0.92, (1.0 - own) * half * 0.92,
+		             pic.tapsOut || n == DelayLineTaps };
+	};
+
+	// pass 1: each channel's own bars - left up, right down
 	for (int side = 0; side < 2; ++side)
 	{
 		const CColor trace = side ? Palette::kTraceRight : Palette::kTraceLeft;
-		const double dir = side ? 1.0 : -1.0;   // left up, right down
+		const double dir = side ? 1.0 : -1.0;
 		for (int n = 1; n <= DelayLineTaps; ++n)
 		{
-			const double x = xOf (n * pic.tapMs[side]);
-			const double own = 1.0 - (DelayLineTaps - n) / 10.0;   // DelayLine's matrix
-			const double h = own * half * 0.92;
-			const double leak = (1.0 - own) * half * 0.92;
-			const bool heard = pic.tapsOut || n == DelayLineTaps;
-
-			// its own side
-			const CRect bar = side ? CRect (x + 1., mid, x + 9., mid + h) : CRect (x - 9., mid - h, x - 1., mid);
-			if (heard)
+			const Tap t = tapOf (side, n);
+			const CRect bar = side ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + t.h)
+			                       : CRect (t.x - kHalfBar, mid - t.h, t.x + kHalfBar, mid);
+			if (t.heard)
 			{
 				auto path = owned (context->createGraphicsPath ());
 				auto gradient = owned (CGradient::create (0.0, 1.0, withAlpha (trace, static_cast<uint8_t> (lit * 0.95)),
@@ -982,11 +995,10 @@ void TapScope::draw (CDrawContext* context)
 				if (path && gradient)
 				{
 					path->addRect (bar);
-					const CPoint far (x, mid + dir * h), near (x, mid);
-					context->fillLinearGradient (path, *gradient, far, near);
+					context->fillLinearGradient (path, *gradient, CPoint (t.x, mid + dir * t.h), CPoint (t.x, mid));
 				}
 				// the bloom along its far edge
-				strokeLine (context, CPoint (bar.left, mid + dir * h), CPoint (bar.right, mid + dir * h),
+				strokeLine (context, CPoint (bar.left, mid + dir * t.h), CPoint (bar.right, mid + dir * t.h),
 				            withAlpha (trace, static_cast<uint8_t> (lit * 0.6)), 1.6);
 			}
 			else
@@ -999,19 +1011,10 @@ void TapScope::draw (CDrawContext* context)
 				context->drawRect (o, kDrawStroked);
 			}
 
-			// the share that crosses to the other side
-			if (heard && leak > 0.5)
-			{
-				const CRect cross = side ? CRect (x - 9., mid - leak, x - 1., mid) : CRect (x + 1., mid, x + 9., mid + leak);
-				context->setFillColor (withAlpha (trace, static_cast<uint8_t> (lit * 0.35)));
-				context->drawRect (cross, kDrawFilled);
-			}
-
-			// the filter replaces tap 5
+			// the filter replaces tap 5: an F beside the bar's far end
 			if (n == DelayLineTaps && pic.filter[side])
-				// beside the bar's far end, on the side the bar leaves free
-				drawLettering (context, "F", kTextScreenSm, withAlpha (trace, lit), x + (side ? -6. : 6.),
-				               mid + dir * (h - 5.), Align::Centre);
+				drawLettering (context, "F", kTextScreenSm, withAlpha (trace, lit), t.x + kHalfBar + 5.,
+				               mid + dir * (t.h - 5.), Align::Centre);
 
 			// the tap numbers: over the left's taps along the top, and under
 			// the right's as well when the two sides' times differ
@@ -1019,9 +1022,31 @@ void TapScope::draw (CDrawContext* context)
 			{
 				char buf[8];
 				std::snprintf (buf, sizeof (buf), "T%d", n);
-				drawLettering (context, buf, kTextScreenSm, Palette::kScreenText, x, side ? bottom + 3. : top + 2.,
+				drawLettering (context, buf, kTextScreenSm, Palette::kScreenText, t.x, side ? bottom + 3. : top + 2.,
 				               Align::Centre);
 			}
+		}
+	}
+
+	// pass 2: the share that crosses over, on top of the other side's bar
+	for (int side = 0; side < 2; ++side)
+	{
+		const CColor trace = side ? Palette::kTraceRight : Palette::kTraceLeft;
+		const double dir = side ? -1.0 : 1.0;   // the OTHER side: left's below, right's above
+		for (int n = 1; n <= DelayLineTaps; ++n)
+		{
+			const Tap t = tapOf (side, n);
+			if (!t.heard || t.leak < 0.5)
+				continue;
+			CRect cross = (dir > 0) ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + t.leak)
+			                        : CRect (t.x - kHalfBar, mid - t.leak, t.x + kHalfBar, mid);
+			cross.inset (1.0, 0.0);
+			context->setFrameColor (withAlpha (trace, static_cast<uint8_t> (lit * 0.7)));
+			context->setLineWidth (1.);
+			context->setLineStyle (kLineSolid);
+			context->drawRect (cross, kDrawStroked);
+			strokeLine (context, CPoint (cross.left - 1., mid + dir * t.leak), CPoint (cross.right + 1., mid + dir * t.leak),
+			            withAlpha (trace, lit), 2.);
 		}
 	}
 

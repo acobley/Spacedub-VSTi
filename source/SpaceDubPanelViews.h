@@ -247,13 +247,15 @@ struct TapPicture
 
 /** THE TAP SCOPE - the echo section's OLED.
 
-    A time axis across the middle. Each channel's five taps are bars at
-    n x its per-tap delay: the LEFT channel's go UP from the axis in
-    green, the RIGHT's DOWN in pale blue. A bar's height is how much of
-    that tap is heard on its own side - DelayLine's matrix gives tap n
-    1 - (5 - n) / 10 of its own channel, so tap 5 is hard-panned and
-    tap 1 sits at 60/40 - and the dim bar on the far side of the axis is
-    the share that crosses over. A tap that is not in the output (Taps
+    A time axis across the middle. Each channel's five taps are bars
+    CENTRED on n x its per-tap delay, so a left and a right tap at the
+    same time share one vertical line: the LEFT channel's go UP from the
+    axis in green, the RIGHT's DOWN in pale blue. A bar's height is how
+    much of that tap is heard on its own side - DelayLine's matrix gives
+    tap n 1 - (5 - n) / 10 of its own channel, so tap 5 is hard-panned
+    and tap 1 sits at 60/40 - and the share that crosses over is an
+    outline with a level mark on the far side of the axis, drawn over
+    the other channel's bar. A tap that is not in the output (Taps
     Out off: only tap 5 is) is drawn as an outline. A tap whose channel
     has its filter on is marked F: the filter replaces tap 5.
 
