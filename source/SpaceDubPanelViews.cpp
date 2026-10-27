@@ -920,9 +920,9 @@ TapScope::TapScope (const CRect& size)
 	setMouseEnabled (false);
 }
 
-void TapScope::axisFor (double tapMsLeft, double tapMsRight, double& spanMs, double& stepMs)
+void TapScope::axisFor (double lastMsLeft, double lastMsRight, double& spanMs, double& stepMs)
 {
-	const double last = DelayLineTaps * std::max ({ tapMsLeft, tapMsRight, 0.0 });
+	const double last = std::max ({ lastMsLeft, lastMsRight, 0.0 });
 	const double target = (last > 0.0) ? last * 1.2 : 10.0;
 	const double raw = target / 8.0;
 	const double decade = std::pow (10.0, std::floor (std::log10 (raw)));
@@ -940,8 +940,8 @@ CRect TapScope::handleRect (int side, int n) const
 {
 	const ScopeGeometry geo = scopeGeometry (getViewSize ());
 	double span = 0.0, step = 0.0;
-	axisFor (mPicture.tapMs[0], mPicture.tapMs[1], span, step);
-	const double x = geo.pl + (geo.pr - geo.pl) * n * mPicture.tapMs[side] / span;
+	axisFor (mPicture.tapMs[0][DelayLineTaps - 1], mPicture.tapMs[1][DelayLineTaps - 1], span, step);
+	const double x = geo.pl + (geo.pr - geo.pl) * mPicture.tapMs[side][n - 1] / span;
 	const double h = geo.half * 0.92;
 	return side ? CRect (x - 9., geo.mid + 1., x + 9., geo.mid + h + 3.)
 	            : CRect (x - 9., geo.mid - h - 3., x + 9., geo.mid - 1.);
@@ -977,7 +977,7 @@ void TapScope::draw (CDrawContext* context)
 	const double pl = geo.pl, pr = geo.pr, top = geo.top, bottom = geo.bottom, mid = geo.mid, half = geo.half;
 
 	double span = 0.0, step = 0.0;
-	axisFor (pic.tapMs[0], pic.tapMs[1], span, step);
+	axisFor (pic.tapMs[0][DelayLineTaps - 1], pic.tapMs[1][DelayLineTaps - 1], span, step);
 	auto xOf = [&] (double ms) { return pl + (pr - pl) * ms / span; };
 
 	strokeLine (context, CPoint (pl, mid), CPoint (pr, mid), Palette::kAxis, 1.);
@@ -1012,7 +1012,9 @@ void TapScope::draw (CDrawContext* context)
 	// through the tap now (the processor's meter). The share that crosses to
 	// the OTHER side is drawn second, over the other channel's bar.
 	constexpr double kHalfBar = 5.0;
-	const bool sameTimes = std::fabs (pic.tapMs[0] - pic.tapMs[1]) < 0.5;
+	bool sameTimes = true;
+	for (int n = 0; n < DelayLineTaps; ++n)
+		sameTimes = sameTimes && std::fabs (pic.tapMs[0][n] - pic.tapMs[1][n]) < 0.5;
 	struct Tap
 	{
 		double x, h, leak, level;
@@ -1020,7 +1022,7 @@ void TapScope::draw (CDrawContext* context)
 	};
 	auto tapOf = [&] (int side, int n) {
 		const double own = 1.0 - (DelayLineTaps - n) / 10.0;   // DelayLine's matrix
-		return Tap { xOf (n * pic.tapMs[side]), own * half * 0.92, (1.0 - own) * half * 0.92,
+		return Tap { xOf (pic.tapMs[side][n - 1]), own * half * 0.92, (1.0 - own) * half * 0.92,
 		             std::clamp (pic.level[side][n - 1], 0.0, 1.0), pic.tapsOut || n == DelayLineTaps };
 	};
 	auto dbText = [] (double level) -> std::string {
@@ -1034,6 +1036,10 @@ void TapScope::draw (CDrawContext* context)
 	// pass 1: each channel's own frame and fill - left up, right down
 	for (int side = 0; side < 2; ++side)
 	{
+		// Grid taps can bunch up near zero (at one grid step tap 1 is a
+		// sixteenth of the echo): a label that would run into the one before
+		// it loses its level, and failing that is left out.
+		double labelRight = -1.0e9;
 		const CColor trace = side ? Palette::kTraceRight : Palette::kTraceLeft;
 		const double dir = side ? 1.0 : -1.0;
 		for (int n = 1; n <= DelayLineTaps; ++n)
@@ -1073,9 +1079,10 @@ void TapScope::draw (CDrawContext* context)
 				            withAlpha (trace, static_cast<uint8_t> (tapLit * 0.7)), 1.6);
 			}
 
-			// the filter replaces tap 5: an F beside the frame's far end
-			if (n == DelayLineTaps && pic.filter[side])
-				drawLettering (context, "F", kTextScreenSm, withAlpha (trace, lit), t.x + kHalfBar + 5.,
+			// the filter replaces tap 5 - and, with Filter Taps on, taps 1-4
+			// too: LP or HP beside the frame's far end
+			if ((n == DelayLineTaps || pic.filterTaps) && pic.filter[side])
+				drawLettering (context, pic.highPass[side] ? "HP" : "LP", kTextScreenSm, withAlpha (trace, lit), t.x + kHalfBar + 5.,
 				               mid + dir * (t.h - 5.), Align::Centre);
 
 			// the tap's number and its level in dBFS: the left's along the
@@ -1087,6 +1094,14 @@ void TapScope::draw (CDrawContext* context)
 			const std::string db = dbText (t.level);
 			if (!db.empty ())
 				label += label.empty () ? db : " " + db;
+			if (!label.empty ()
+			    && t.x - Lettering::width (label, kTextScreenSm) / 2. < labelRight + 3.)
+				label = (side == 0 || !sameTimes) ? "T" + std::to_string (n) : std::string ();
+			if (!label.empty ()
+			    && t.x - Lettering::width (label, kTextScreenSm) / 2. < labelRight + 3.)
+				label.clear ();
+			if (!label.empty ())
+				labelRight = t.x + Lettering::width (label, kTextScreenSm) / 2.;
 			if (!label.empty ())
 				drawLettering (context, label, kTextScreenSm, side == 0 || !sameTimes ? Palette::kScreenText
 				                                                                       : withAlpha (trace, 200),

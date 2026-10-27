@@ -142,9 +142,18 @@ int main ()
 					const Box b = selectorLabelBox (g, i, kSyncNames[i]);
 					chk (inside (r, b.left, b.top, b.right, b.bottom), name (c) + ": position " + kSyncNames[i] + " outside");
 				}
+			if (isFilterMode (c.tag))
+				for (int i = 0; i < g.positions; ++i)
+				{
+					const Box b = selectorLabelBox (g, i, kFilterModeNames[i]);
+					chk (inside (r, b.left, b.top, b.right, b.bottom),
+					     name (c) + ": position " + kFilterModeNames[i] + " outside");
+				}
 			const double w = Lettering::width (c.label, kTextLabel);
 			const double h = kTextLabel.height ();
-			if (g.place == NamePlace::Below)
+			if (std::string (c.label).empty ())
+				;   // no name of its own (the filter modes): nothing to place
+			else if (g.place == NamePlace::Below)
 				chk (inside (r, g.nameX - w / 2, g.nameCentreY - h / 2, g.nameX + w / 2, g.nameCentreY + h / 2),
 				     name (c) + ": name outside");
 			else

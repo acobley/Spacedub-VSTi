@@ -30,7 +30,7 @@
 // resource/ needs no artwork. And no numbers made here: every reading
 // comes in through a formatter the editor hands over (readoutFor()), and
 // the tap scope gets its times from the editor, which gets them from
-// DelayLine::computeDelaySamples - the DSP's own mapping.
+// DelayLine::computeTapSamples - the DSP's own mapping.
 //
 // THE WEAR is R2Synth's "Studio Worn" (PanelWear.h): dust, hairline
 // scratches, polished and scuffed knob tops, specks and fingerprints on
@@ -233,14 +233,19 @@ private:
 };
 
 //------------------------------------------------------------------------
-/** What the tap scope shows: each channel's per-tap delay, and whether
+/** What the tap scope shows: where each channel's taps land, and whether
     the taps before the last are heard (Taps Out). Filled in by the
-    editor from DelayLine::computeDelaySamples. */
+    editor from DelayLine::computeTapSamples. */
 struct TapPicture
 {
-	double tapMs[2] = { 0.0, 0.0 };   // left, right: one tap's delay
+	/** [channel][tap - 1]: each tap's delay in ms. Evenly spaced
+	    free-running; on the sync grid (halving down from tap 5) when synced. */
+	double tapMs[2][5] = {};
+	bool   grid     = false;          // synced: the taps sit on the sync grid
 	bool   tapsOut  = false;          // taps 1-4 in the output, or tap 5 only
 	bool   filter[2] = { false, false };
+	bool   filterTaps = false;        // Filter Taps: taps 1-4 through the filter too
+	bool   highPass[2] = { false, false };   // Filter Mode: the side's filter is a high-pass
 	bool   enabled  = true;
 	double dry      = 1.0;            // Dry Level, 0..1: the height of the DRY line
 	std::string annotation;           // top right, e.g. "64 MS / TAP"
@@ -294,11 +299,11 @@ public:
 
 	CLASS_METHODS (TapScope, VSTGUI::CView)
 
-	/** The axis's full scale in ms and its tick step, for the two
-	    channels' per-tap delays: the last tap plus a fifth, rounded up to
-	    a whole number of 1/2/5 steps, at most eight labelled ticks. Public
-	    for the tests. */
-	static void axisFor (double tapMsLeft, double tapMsRight, double& spanMs, double& stepMs);
+	/** The axis's full scale in ms and its tick step, from the two
+	    channels' LAST taps (tap 5): the last tap plus a fifth, rounded up
+	    to a whole number of 1/2/5 steps, at most eight labelled ticks.
+	    Public for the tests. */
+	static void axisFor (double lastMsLeft, double lastMsRight, double& spanMs, double& stepMs);
 
 	/** Where a TapHandle goes for tap `n` (1..5) of `side` (0 left, 1
 	    right), in the frame's coordinates: a column 18 px wide centred on

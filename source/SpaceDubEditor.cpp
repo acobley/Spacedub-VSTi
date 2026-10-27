@@ -62,7 +62,7 @@ double SpaceDubEditor::sampleRate () const
 // the short form of what its tooltip handler reported - just the value,
 // since every knob prints its name under the reading.
 //------------------------------------------------------------------------
-double SpaceDubEditor::tapMilliseconds (ParamID delayTag, int* steps) const
+double SpaceDubEditor::tapMilliseconds (ParamID delayTag, int* steps, double* tapsMs) const
 {
 	const int rate      = static_cast<int> (internalOf (kMidiRate));
 	const int divisions = midiRateDivisions (rate);
@@ -71,11 +71,16 @@ double SpaceDubEditor::tapMilliseconds (ParamID delayTag, int* steps) const
 	const long   lineLength = static_cast<long> (sr) * DelayLine::kLineSeconds;
 	const int    grid       = samplesPer32For (divisions, runningTempo (), sr);
 
-	int s = 0;
-	const long perTap = DelayLine::computeDelaySamples (static_cast<float> (internalOf (delayTag)), lineLength, grid, &s);
+	int  s = 0;
+	long taps[DelayLine::kTapArray] = {};
+	DelayLine::computeTapSamples (static_cast<float> (internalOf (delayTag)), lineLength, grid, taps, &s);
 	if (steps)
 		*steps = s;
-	return (sr > 0.0) ? perTap * 1000.0 / sr : 0.0;
+	const double msPerSample = (sr > 0.0) ? 1000.0 / sr : 0.0;
+	if (tapsMs)
+		for (int n = 1; n <= DelayLine::kNumTaps; ++n)
+			tapsMs[n - 1] = taps[n] * msPerSample;
+	return taps[DelayLine::kNumTaps] * msPerSample;
 }
 
 std::string SpaceDubEditor::readoutFor (ParamID tag) const
@@ -106,8 +111,8 @@ std::string SpaceDubEditor::readoutFor (ParamID tag) const
 		case kMidiRate:
 			return {};
 
-		//-- delay: the whole echo, five taps, as the DSP has quantised it -
-		//   DelayLine::computeDelaySamples over the sample rate and tempo
+		//-- delay: the whole echo (tap 5), as the DSP has quantised it -
+		//   DelayLine::computeTapSamples over the sample rate and tempo
 		//   the processor has told us about. The DXi read it back over a
 		//   direct C++ back-channel (MyProps); in VST3 the processor and the
 		//   controller are separate components, so the editor runs the same
@@ -116,12 +121,11 @@ std::string SpaceDubEditor::readoutFor (ParamID tag) const
 		case kDelayRight:
 		{
 			int steps = 0;
-			const double perTap = tapMilliseconds (tag, &steps);
-			const int divisions = midiRateDivisions (static_cast<int> (internalOf (kMidiRate)));
-			if (divisions == 0)
-				std::snprintf (buf, sizeof (buf), "%.0f ms", perTap * DelayLine::kNumTaps);
+			const double echo = tapMilliseconds (tag, &steps);
+			if (steps == 0)
+				std::snprintf (buf, sizeof (buf), "%.0f ms", echo);
 			else
-				std::snprintf (buf, sizeof (buf), "%.0f ms %du", perTap * DelayLine::kNumTaps, steps);
+				std::snprintf (buf, sizeof (buf), "%.0f ms %du", echo, steps);
 			break;
 		}
 
@@ -299,6 +303,9 @@ void SpaceDubEditor::addControl (const Layout::Control& c)
 			sw->setLabel (c.label);
 			if (tag == kMidiRate)
 				sw->setNames (std::vector<std::string> (std::begin (Layout::kSyncNames), std::end (Layout::kSyncNames)));
+			else if (isFilterMode (tag))
+				sw->setNames (std::vector<std::string> (std::begin (Layout::kFilterModeNames),
+				                                        std::end (Layout::kFilterModeNames)));
 			sw->setWear (Wear::selectorGrit (index));
 			registerControl (tag, sw);
 			break;
@@ -341,6 +348,7 @@ void SpaceDubEditor::applyLink (ParamID tag, ParamValue value)
 		{kResonanceLeft,       kResonanceRight,       kLinkFilters},
 		{kFilterGainLeft,      kFilterGainRight,      kLinkFilters},
 		{kFilterLeftEnable,    kFilterRightEnable,    kLinkFilters},
+		{kFilterModeLeft,      kFilterModeRight,      kLinkFilters},
 		// the per-tap feedback goes with Loop Scale, the amount it multiplies
 		{kTapFeedbackLeft1,    kTapFeedbackRight1,    kLinkLoops},
 		{kTapFeedbackLeft2,    kTapFeedbackRight2,    kLinkLoops},
@@ -433,6 +441,9 @@ void SpaceDubEditor::refreshDependents (ParamID tag)
 		case kLoopsFeedbackEnable:
 		case kFilterLeftEnable:
 		case kFilterRightEnable:
+		case kFilterTaps:
+		case kFilterModeLeft:
+		case kFilterModeRight:
 			refreshTapScope ();
 			break;
 
@@ -458,11 +469,16 @@ void SpaceDubEditor::refreshTapScope ()
 		return;
 
 	Panel::TapPicture pic;
-	pic.tapMs[0]  = tapMilliseconds (kDelayLeft);
-	pic.tapMs[1]  = tapMilliseconds (kDelayRight);
+	int stepsL = 0, stepsR = 0;
+	const double echoL = tapMilliseconds (kDelayLeft, &stepsL, pic.tapMs[0]);
+	const double echoR = tapMilliseconds (kDelayRight, &stepsR, pic.tapMs[1]);
+	pic.grid      = stepsL > 0 || stepsR > 0;
 	pic.tapsOut   = isOn (kTapsOut);
 	pic.filter[0] = isOn (kFilterLeftEnable);
 	pic.filter[1] = isOn (kFilterRightEnable);
+	pic.filterTaps = isOn (kFilterTaps);
+	pic.highPass[0] = isOn (kFilterModeLeft);
+	pic.highPass[1] = isOn (kFilterModeRight);
 	pic.enabled   = isOn (kEnable) && !isOn (kBypass);
 	pic.dry       = normalizedOf (kMainOut);
 	for (int ch = 0; ch < 2; ++ch)
@@ -474,10 +490,14 @@ void SpaceDubEditor::refreshTapScope ()
 		std::snprintf (buf, sizeof (buf), "Switched off");
 	else if (isOn (kBypass))
 		std::snprintf (buf, sizeof (buf), "Bypassed");
-	else if (std::fabs (pic.tapMs[0] - pic.tapMs[1]) < 0.5)
-		std::snprintf (buf, sizeof (buf), "%.0f ms / tap", pic.tapMs[0]);
+	else if (pic.grid && std::fabs (echoL - echoR) < 0.5)
+		std::snprintf (buf, sizeof (buf), "Grid taps  %.0f ms", echoL);
+	else if (pic.grid)
+		std::snprintf (buf, sizeof (buf), "Grid taps  L %.0f / R %.0f ms", echoL, echoR);
+	else if (std::fabs (pic.tapMs[0][0] - pic.tapMs[1][0]) < 0.5)
+		std::snprintf (buf, sizeof (buf), "%.0f ms / tap", pic.tapMs[0][0]);
 	else
-		std::snprintf (buf, sizeof (buf), "L %.0f / R %.0f ms a tap", pic.tapMs[0], pic.tapMs[1]);
+		std::snprintf (buf, sizeof (buf), "L %.0f / R %.0f ms a tap", pic.tapMs[0][0], pic.tapMs[1][0]);
 	pic.annotation = Panel::upper (buf);
 
 	// The feedback handles: shown while Taps Feedback is on, each over its tap.

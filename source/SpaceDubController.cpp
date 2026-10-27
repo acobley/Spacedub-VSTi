@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <string>
 
 using namespace Steinberg;
 using namespace Steinberg::Vst;
@@ -54,6 +55,10 @@ public:
 			else
 				std::snprintf (text, sizeof (text), "%d", bpm);
 		}
+		else if (isFilterMode (mDef.id))
+		{
+			std::snprintf (text, sizeof (text), "%s", (normalized >= 0.5) ? "High Pass" : "Low Pass");
+		}
 		else if (mDef.type == ParamType::Bool)
 		{
 			std::snprintf (text, sizeof (text), "%s", (normalized >= 0.5) ? "On" : "Off");
@@ -64,6 +69,30 @@ public:
 		}
 
 		UString (string, str16BufferSize (String128)).assign (USTRING (text));
+	}
+
+	/** The switches' words back to values - the base class only reads
+	    numbers, so "High Pass" or "On" typed into a host would fail. */
+	bool fromString (const TChar* string, ParamValue& normalized) const SMTG_OVERRIDE
+	{
+		if (mDef.type == ParamType::Bool && string)
+		{
+			char text[16] = {};
+			for (int i = 0; i < 15 && string[i]; ++i)
+				text[i] = static_cast<char> ((string[i] >= 'A' && string[i] <= 'Z') ? string[i] + 32 : string[i]);
+			const std::string s (text);
+			if (s.rfind ("on", 0) == 0 || s.rfind ("high", 0) == 0 || s.rfind ("hp", 0) == 0)
+			{
+				normalized = 1.0;
+				return true;
+			}
+			if (s.rfind ("of", 0) == 0 || s.rfind ("low", 0) == 0 || s.rfind ("lp", 0) == 0)
+			{
+				normalized = 0.0;
+				return true;
+			}
+		}
+		return RangeParameter::fromString (string, normalized);
 	}
 
 private:

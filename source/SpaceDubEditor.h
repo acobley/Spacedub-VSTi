@@ -61,9 +61,11 @@ public:
 	    processor makes, so the two cannot disagree. */
 	double runningTempo () const;
 
-	/** One tap's delay in milliseconds for a channel's Delay parameter, by
-	    DelayLine::computeDelaySamples - the DSP's own mapping. */
-	double tapMilliseconds (Steinberg::Vst::ParamID delayTag, int* steps = nullptr) const;
+	/** Where a channel's taps land, in milliseconds, for its Delay parameter, by
+	    DelayLine::computeTapSamples - the DSP's own mapping. Returns the
+	    whole echo (tap 5); tapsMs, if given, receives all five taps. */
+	double tapMilliseconds (Steinberg::Vst::ParamID delayTag, int* steps = nullptr,
+	                        double* tapsMs = nullptr) const;
 
 	static const int kEditorWidth  = Layout::kEditorWidth;
 	static const int kEditorHeight = Layout::kEditorHeight;

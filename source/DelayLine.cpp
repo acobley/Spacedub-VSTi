@@ -83,8 +83,8 @@ void DelayLine::reset ()
 	mAddPos    = 0;
 	mRemovePos = 1;
 	mLastValid = 0;
-	mIn1 = mIn2 = mIn3 = mIn4 = 0.0;
-	mOut1 = mOut2 = mOut3 = mOut4 = 0.0;
+	for (Ladder& l : mLadder)
+		l = Ladder ();
 	mNoisePos = 0;
 }
 
@@ -99,10 +99,13 @@ void DelayLine::process (float input, float* taps)
 
 	long removePos    = mAddPos;
 	long oldRemovePos = mAddPos;
+	float raw[kTapArray] = {};                   // each tap as read, for Filter Taps
 
 	for (int ix = 1; ix <= kNumTaps; ++ix)
 	{
-		removePos = mAddPos - static_cast<long> (ix) * mDelaySamples;
+		// Each tap's own delay: n x the per-tap delay free-running (the DXi),
+		// or on the sync grid when synced - see computeTapSamples().
+		removePos = mAddPos - mTapSamples[ix];
 		if (removePos < 0)
 			removePos = (mLength - 1) + removePos;
 		if (removePos < 0)                       // safety net; see notes
@@ -110,7 +113,8 @@ void DelayLine::process (float input, float* taps)
 		else if (removePos >= mLength)
 			removePos = mLength - 1;
 
-		taps[ix] = line[removePos] * mTapsOutGain;
+		raw[ix]  = line[removePos];
+		taps[ix] = raw[ix] * mTapsOutGain;
 
 		if (mLoopsFeedback)
 		{
@@ -133,29 +137,26 @@ void DelayLine::process (float input, float* taps)
 
 	if (mUseFilter)
 	{
-		eqSample += mNoise[mNoisePos];
+		const float noise = mNoise[mNoisePos];
+		eqSample += noise;
 		if (++mNoisePos >= kNoiseLen)
 			mNoisePos = 0;
 
-		// "Moog VCF, variation 2" (musicdsp.org) - unchanged from the DXi.
-		const double f  = mFrequency * 1.16;
-		const double fb = mResonance * (1.0 - 0.15 * f * f);
-
-		eqSample -= mOut4 * fb;
-		eqSample *= 0.35013 * (f * f) * (f * f);
-
-		mOut1 = scrub (eqSample + 0.3 * mIn1 + (1.0 - f) * mOut1);  // Pole 1
-		mIn1  = eqSample;
-		mOut2 = scrub (mOut1 + 0.3 * mIn2 + (1.0 - f) * mOut2);     // Pole 2
-		mIn2  = mOut1;
-		mOut3 = scrub (mOut2 + 0.3 * mIn3 + (1.0 - f) * mOut3);     // Pole 3
-		mIn3  = mOut2;
-		mOut4 = scrub (mOut3 + 0.3 * mIn4 + (1.0 - f) * mOut4);     // Pole 4
-		mIn4  = mOut3;
-
-		eqSample = mOut4 * mFilterGain;
+		eqSample = runLadder (mLadder[kNumTaps], eqSample) * mFilterGain;
 		// The filtered tap replaces tap 5 and uses the *main* out gain.
 		taps[kNumTaps] = static_cast<float> (eqSample * mMainOutGain);
+
+		// Filter Taps: taps 1..4 through ladders of their own, with the same
+		// dither sample, filter gain, and their own (taps out) gain. The
+		// line - and so every feedback path - is untouched.
+		if (mFilterTaps)
+		{
+			for (int ix = 1; ix < kNumTaps; ++ix)
+			{
+				const double y = runLadder (mLadder[ix], static_cast<double> (raw[ix]) + noise) * mFilterGain;
+				taps[ix] = static_cast<float> (y * mTapsOutGain);
+			}
+		}
 	}
 
 	if (mMainFeedback)
@@ -176,6 +177,44 @@ void DelayLine::process (float input, float* taps)
 }
 
 //------------------------------------------------------------------------
+double DelayLine::runLadder (Ladder& s, double x) const
+{
+	// "Moog VCF, variation 2" (musicdsp.org) - unchanged from the DXi.
+	const double f  = mFrequency * 1.16;
+	const double fb = mResonance * (1.0 - 0.15 * f * f);
+
+	x -= s.out4 * fb;
+	const double input = x;                   // after the resonance, before the scaling
+	const double scale = 0.35013 * (f * f) * (f * f);
+	x *= scale;
+
+	s.out1 = scrub (x + 0.3 * s.in1 + (1.0 - f) * s.out1);       // Pole 1
+	s.in1  = x;
+	s.out2 = scrub (s.out1 + 0.3 * s.in2 + (1.0 - f) * s.out2);  // Pole 2
+	s.in2  = s.out1;
+	s.out3 = scrub (s.out2 + 0.3 * s.in3 + (1.0 - f) * s.out3);  // Pole 3
+	s.in3  = s.out2;
+	s.out4 = scrub (s.out3 + 0.3 * s.in4 + (1.0 - f) * s.out4);  // Pole 4
+	s.in4  = s.out3;
+
+	if (!mHighPass || !(scale > 0.0))
+		return s.out4;
+
+	// HIGH-PASS, by mixing the poles (the Oberheim Xpander's trick). Each
+	// pole is (1 + 0.3/z) / (1 - (1-f)/z), DC gain 1.3/f; call g = f/1.3.
+	// Normalised to unity DC gain the k-th pole output is
+	//     p_k = out_k * g^k / scale        (scale = 0.35013 f^4 ~ g^4)
+	// and (1 - p)^4 is a 4-pole high-pass, because 1 - g(1 + 0.3/z) /
+	// (1 - (1-f)/z) = (1 - g)(1 - 1/z) / (1 - (1-f)/z) - a zero at DC:
+	//     hp = input - 4 p1 + 6 p2 - 4 p3 + p4
+	// The resonance still comes from out4, so the peak sits at the cutoff.
+	const double g  = f / 1.3;
+	const double g2 = g * g;
+	const double hp = input - (4.0 * s.out1 * g - 6.0 * s.out2 * g2 + 4.0 * s.out3 * g2 * g - s.out4 * g2 * g2) / scale;
+	return scrub (hp);
+}
+
+//------------------------------------------------------------------------
 float DelayLine::readTail ()
 {
 	if (mLine.empty ())
@@ -192,10 +231,57 @@ float DelayLine::setDelay (float delay)
 	if (mLength <= 0)
 		return 0.f;
 
-	mDelaySamples = static_cast<int> (computeDelaySamples (delay, mLength, mSamplesPer32, &mTempoQuant));
+	const long last = computeTapSamples (delay, mLength, mSamplesPer32, mTapSamples, &mTempoQuant);
+	mDelaySamples   = static_cast<int> (std::max (1L, last / kNumTaps));   // the average spacing
 
-	const float delayLength = static_cast<float> (mDelaySamples * kNumTaps);
-	return delayLength / static_cast<float> (mSampleRate);
+	return static_cast<float> (last) / static_cast<float> (mSampleRate);
+}
+
+//------------------------------------------------------------------------
+long DelayLine::computeTapSamples (float delay, long lineLength, int samplesPer32,
+                                   long* tapsOut, int* stepsOut)
+{
+	int steps = 0;
+	const long perTap = computeDelaySamples (delay, lineLength, samplesPer32, &steps);
+
+	// The DXi's spacing: five equal steps.
+	tapsOut[0] = 0;
+	for (int n = 1; n <= kNumTaps; ++n)
+		tapsOut[n] = n * perTap;
+	if (stepsOut)
+		*stepsOut = steps;
+
+	if (samplesPer32 <= 0 || steps < 1)
+		return tapsOut[kNumTaps];
+
+	// GRID TAPS. computeDelaySamples counts the echo in whole grid units
+	// (`steps` of samplesPer32 / 5 per tap, i.e. `steps` of samplesPer32 for
+	// the echo), but its integer samplesPer32 / 5 leaves the echo a few
+	// samples short of steps x U. Put tap 5 on the grid exactly - as long as
+	// that still fits in the line, which the integer division can tip over.
+	const long unit     = samplesPer32;
+	const long maxTotal = (lineLength / kNumTaps) * kNumTaps;
+	long n = steps;
+	while (n > 0 && n * unit > maxTotal)
+		--n;
+	if (n < 1)
+		return tapsOut[kNumTaps];             // one grid step is longer than the line
+
+	if (stepsOut)
+		*stepsOut = static_cast<int> (n);
+	tapsOut[kNumTaps] = n * unit;
+
+	// The largest power of two strictly below n (1/2 when n is 1), then
+	// halving for each tap before it.
+	double p = 0.5;
+	while (p * 2.0 < static_cast<double> (n))
+		p *= 2.0;
+	for (int t = kNumTaps - 1; t >= 1; --t)
+	{
+		tapsOut[t] = std::max (1L, std::lround (p * static_cast<double> (unit)));
+		p *= 0.5;
+	}
+	return tapsOut[kNumTaps];
 }
 
 //------------------------------------------------------------------------

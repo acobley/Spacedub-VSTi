@@ -15,28 +15,36 @@ sample rate is 44.1 kHz and the tempo screen shows the manual tempo.
 
 **[signal-routing.png](signal-routing.png)** — how audio flows through the
 plug-in. [`signal-routing.svg`](signal-routing.svg) is the source; the PNG is
-exported from it at 2× (2080 × 2370) for anywhere that will not render SVG.
+rendered from it at 2× (2080 × 3120) with headless Chromium.
 
-Two panels:
+Three panels:
 
 * **A — one delay line.** `DelayLine::process()`: the 8-second circular buffer,
-  the five taps at −1×d … −5×d, the tap-to-tap regeneration path (Loop Scale),
-  the ladder filter that replaces tap 5, and the main feedback path back into
-  the write head. The processor instantiates two of these, `mDelayL` and
-  `mDelayR`.
-* **B — the stereo tap matrix.** `SpaceDubProcessor::processAudio()`: the
-  per-tap panning weights, carried over from the DXi unchanged, and the dry
-  (Straight Thru) path.
+  the five taps (n × d free-running, on the sync grid when synced), the
+  tap-to-tap regeneration — five paths, tap 1 feeding the write head, each
+  × Loop Scale × that tap's **feedback handle** — the optional Filter Taps
+  ladders on taps 1–4, the DXi's ladder on tap 5, and main feedback.
+* **B — the stereo tap matrix.** `SpaceDubProcessor::processAudio()`: Taps
+  Out, the fixed per-tap panning, and Dry.
+* **C — the tap scope's marks.** What the frame, the fill, the crossing frame,
+  the F and the amber handle each stand for, and where in A and B they sit.
 
-Three details in the diagram are easy to get wrong, and all three are
-deliberate behaviour inherited from the DXi:
+Details that are easy to get wrong, all deliberate:
 
-* The filtered tap leaves through **Feedback Out**, not Taps Gain — unlike the
-  other four taps.
-* Main feedback is tapped **after Filter Gain but before Feedback Out**, so the
-  amount fed back is not the amount you hear.
-* With the filter off, the signal fed back is the **raw** last tap.
+* **The handles on the tap scope are tap FEEDBACK, not tap volume.** Each sets
+  how much of its tap regenerates into the tap before it (tap 1 into the write
+  head), only while Taps FB is on. There is no per-tap volume: Taps Gain and
+  FB Out are per side.
+* The filtered tap 5 leaves through **FB Out**, not Taps Gain.
+* Main feedback is tapped **after Filter Gain but before FB Out**; with the
+  filter off it is the raw tap 5.
+* The scope's meters are read after the gains and any filter, before the
+  matrix, whether or not Taps Out lets the tap be heard.
+* Filter Taps filters only what is heard from taps 1–4, never the line.
+
+The previous drawing showed four regeneration arcs; there are five — the
+DXi's loop starts `oldRemovePos` at the write head, so tap 1 regenerates into
+the newest sample.
 
 The drawing is maintained by hand. If you change the routing, edit the SVG and
-re-export the PNG — `PORTING-NOTES.md` sections 3 and 4 explain the reasoning
-behind each path.
+re-render the PNG.

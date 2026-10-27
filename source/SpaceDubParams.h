@@ -71,6 +71,16 @@ enum Param : Steinberg::Vst::ParamID
 	kTapFeedbackRight4,
 	kTapFeedbackRight5,
 
+	// Filter Taps: with a channel's filter on, taps 1..4 go through the
+	// filter too (each its own ladder). Off - the default - is the DXi,
+	// where only tap 5 is filtered. Appended, so saved projects load as off.
+	kFilterTaps,
+
+	// Filter Mode: the ladder as a low-pass (0, the DXi's only mode) or a
+	// high-pass (1), per side. Appended, so saved projects load low-pass.
+	kFilterModeLeft,
+	kFilterModeRight,
+
 	kNumParams,
 
 	kBypass = 1000,         // standard VST3 bypass (kIsBypass)
@@ -132,6 +142,11 @@ inline Steinberg::Vst::ParamID tapFeedbackId (int channel, int tap)
 inline bool isTapFeedback (Steinberg::Vst::ParamID id)
 {
 	return id >= kTapFeedbackLeft1 && id <= kTapFeedbackRight5;
+}
+
+inline bool isFilterMode (Steinberg::Vst::ParamID id)
+{
+	return id == kFilterModeLeft || id == kFilterModeRight;
 }
 
 inline bool isTapLevel (Steinberg::Vst::ParamID id)

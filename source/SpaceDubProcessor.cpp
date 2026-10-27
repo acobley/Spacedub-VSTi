@@ -191,6 +191,11 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 
 	mDelayL.setUseFilter (paramDef (kFilterLeftEnable).toInternal (mParamTargets[kFilterLeftEnable]) >= 0.5);
 	mDelayR.setUseFilter (paramDef (kFilterRightEnable).toInternal (mParamTargets[kFilterRightEnable]) >= 0.5);
+	const bool filterTaps = paramDef (kFilterTaps).toInternal (mParamTargets[kFilterTaps]) >= 0.5;
+	mDelayL.setFilterTaps (filterTaps);
+	mDelayR.setFilterTaps (filterTaps);
+	mDelayL.setHighPass (paramDef (kFilterModeLeft).toInternal (mParamTargets[kFilterModeLeft]) >= 0.5);
+	mDelayR.setHighPass (paramDef (kFilterModeRight).toInternal (mParamTargets[kFilterModeRight]) >= 0.5);
 
 	mDelayL.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainLeft).toInternal (mParamTargets[kFeedbackOutGainLeft])));
 	mDelayR.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainRight).toInternal (mParamTargets[kFeedbackOutGainRight])));

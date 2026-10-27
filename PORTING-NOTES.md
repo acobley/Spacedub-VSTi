@@ -71,6 +71,8 @@ identical values to the original.**
 | — | — | **Tap 1–5 Feedback Left / Right** (new, ids 29–38) | 0–200 % | 0–2 | 100 |
 | — | — | **Bypass** (new, id 1000) | 0/1 | — | 0 |
 | — | — | **Host Tempo** (new, id 1001, read-only) | 0–300 | — | 0 |
+| — | — | **Filter Taps** (new, appended after the tap feedback levels) | 0/1 | 0/1 | 0 (off) |
+| — | — | **Filter Mode Left / Right** (new, appended) | Low Pass / High Pass | 0/1 | Low Pass |
 
 `Dry Level` was the DXi's `Straight Thru`, an on/off switch for the dry
 signal. On the `Polivoks` branch it became a continuous gain, 0–100 % of the
@@ -193,6 +195,114 @@ calling `process` with silence, which flushes the line through the normal path.
 
 **Mono.** The original was stereo-only. A mono bus arrangement is now
 accepted and the single channel is fed to both delay lines.
+
+**Grid taps (tempo sync).** The DXi spaced its five taps evenly whatever the
+sync rate: synced, the *echo* (tap 5) landed on the grid but taps 1–4 sat at
+1/5, 2/5, 3/5 and 4/5 of it — at an echo of three sixteenths, at 0.6, 1.2, 1.8
+and 2.4 of a sixteenth, none of them on a note. Now, whenever `Sync Rate` is
+on and the delay is long enough to quantise, every tap is on the grid. With
+the echo at N grid units U (U = one step of the sync rate):
+
+* tap 5 sits at exactly N × U, and
+* taps 4..1 halve down from the largest power of two strictly below N.
+
+| N | taps 1–5, in U |
+|---|---|
+| 1 | 1/16, 1/8, 1/4, 1/2, 1 |
+| 2 | 1/8, 1/4, 1/2, 1, 2 |
+| 3 | 1/4, 1/2, 1, 2, 3 |
+| 4 | 1/4, 1/2, 1, 2, 4 |
+| 8 | 1/2, 1, 2, 4, 8 |
+
+Tap 5 also moves by a few samples: `computeDelaySamples` quantises per tap to
+the integer `samplesPer32 / 5`, which left the echo up to 4 × N samples short
+of N × U. Tap 5 is now on N × U exactly (N is stepped down if that would not
+fit in the line, which the same integer division can tip over).
+
+The rule lives in one place, `DelayLine::computeTapSamples`, which `setDelay`
+and the editor both call — the delay readout, the tap scope's bars and the
+feedback handles follow it. Free-running is untouched: the taps are
+`n × computeDelaySamples`, and a 400 000-sample render with both feedback paths
+and the filter on hashes bit-identical to the previous build. Synced, the same
+render differs, as it must. `tests/DelayLineTests.cpp` checks 7 and 8 pin both:
+the worked examples above, a sweep of 32 580 synced settings (three sample
+rates, six divisions, five tempi) against the rule, and an impulse through a
+live `DelayLine` coming out of each tap at exactly `getTapSamples (t)`.
+
+The tap-to-tap regeneration is unchanged in form — each tap still feeds the
+position of the tap before it — so with grid taps its loop lengths are the
+gaps between grid taps rather than equal fifths.
+
+**Projects saved with tempo sync on will sound different**: their taps 1–4 move
+onto the grid. Free-running projects are unaffected.
+
+**Filter Taps.** In the DXi only tap 5 was filtered: the ladder filter runs on
+the last tap's read (`fEqSample = fLine[nRemovePos]` after the tap loop), and
+its output *replaces* tap 5. Taps 1–4 went to the output straight off the line,
+unfiltered, whatever the filter switches said. That is still the default.
+
+The new `Filter Taps` switch (on the rule in the filter section, one for both
+sides) sends taps 1–4 through the filter too, on any channel whose filter is
+on. Each tap gets **its own ladder** — the filter has state, so one shared
+ladder fed four signals would be a different, wrong filter — running the same
+cutoff, resonance and filter gain as tap 5's, with the same dither sample.
+Filtered taps keep the **taps out gain** (tap 5 keeps the DXi's main out gain).
+Only the taps' *output* is filtered: the line, and so the main feedback and the
+tap-to-tap regeneration, are untouched — the filter in the feedback path is
+still tap 5's alone.
+
+The ladder arithmetic moved into `DelayLine::runLadder`, shared by all five.
+With the switch off the result is bit-identical to the previous build (the
+same 400 000-sample render hash, filter on), and `tests/DelayLineTests.cpp`
+check 9 pins it: off is the existing path; with the filter off the switch does
+nothing; on, tap 5 is unchanged sample for sample (proving the line is), every
+tap 1–4 changes, and white noise through tap 2 loses its top end (first-
+difference energy ratio 1.98 → 0.0025 at a Cutoff reading 900 Hz). The tap scope marks
+every filtered tap (LP or HP since Filter Mode, below).
+
+The parameter is appended after the tap feedback levels, so ids are unchanged
+and a project saved before it loads with Filter Taps off.
+
+**Filter Mode: low-pass or high-pass.** The DXi's ladder is a low-pass only.
+Each side now has a mode selector under its On switch, printed LP / HP, linked
+by Link Filters like the rest of the section. High-pass is **mixed from the
+same ladder's poles** (the Oberheim Xpander's approach) rather than being a
+second filter, so cutoff, resonance, filter gain, dither, the ±16 bounds and
+Filter Taps all apply unchanged, and the low-pass arithmetic is untouched.
+
+Each pole here is `(1 + 0.3/z) / (1 − (1−f)/z)` with DC gain `1.3/f`. With
+`g = f/1.3` and the ladder's input scaling `scale = 0.35013 f⁴` (≈ g⁴), the
+k-th pole normalised to unity DC gain is `p_k = out_k · g^k / scale`, and
+
+    hp = in − 4 p1 + 6 p2 − 4 p3 + p4       (in = after the resonance subtraction)
+
+is `(1 − p)⁴`: since `1 − g(1 + 0.3/z)/(1 − (1−f)/z) = (1−g)(1 − 1/z)/(1 − (1−f)/z)`,
+each factor has a zero exactly at DC. Resonance is still fed back from `out4`,
+so the peak sits at the corner. The high-pass result goes through the same
+`scrub()` bound as the states.
+
+Measured (48 kHz, Cutoff showing 2.5 kHz, resonance 0, filter gain 100 %):
+
+| Hz | LP dB | HP dB |
+|---|---|---|
+| 50 | 0.0 | −131.6 |
+| 625 | −1.5 | −46.2 |
+| 2 500 | −15.4 | −11.8 |
+| 10 000 | −57.6 | −3.2 |
+
+23 dB per octave two octaves under the corner — four poles. Note that neither
+mode is −3 dB at the readout's frequency: this ladder's low-pass corner (−3 dB) sits near 900 Hz, well over an
+octave below what `computeCutoffHz` reports, as it always did in the DXi. The
+readout is kept as the DXi's number. The worst case (resonance 3, 500 % gain,
+200 % feedback, Filter Taps on, high-pass) stays bounded at a peak of 34.
+
+Low-pass renders hash bit-identical to the build before this change.
+`tests/DelayLineTests.cpp` check 10 pins the responses, the slope, Filter Taps
+following the mode, and the bound; `LayoutTests` checks the LP / HP names fit.
+
+The panel: to make room, Resonance and Gain moved 10 and 18 px left, and the On
+switches 10 px left, so the selector's printed names clear the knobs and the
+section edge. The tap scope's F mark is now LP or HP.
 
 ---
 

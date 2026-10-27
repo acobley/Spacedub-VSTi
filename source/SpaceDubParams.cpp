@@ -52,6 +52,9 @@ const ParamDef kParams[kNumParams] = {
 	{kTapFeedbackRight3,    "Tap 3 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
 	{kTapFeedbackRight4,    "Tap 4 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
 	{kTapFeedbackRight5,    "Tap 5 Feedback Right",  "%",   ParamType::Float,   0,   200,  100,  0,   2,    0,    false},
+	{kFilterTaps,           "Filter Taps",           "",    ParamType::Bool,    0,   1,    0,    0,   1,    1,    false},
+	{kFilterModeLeft,       "Filter Mode Left",      "",    ParamType::Bool,    0,   1,    0,    0,   1,    1,    false},
+	{kFilterModeRight,      "Filter Mode Right",     "",    ParamType::Bool,    0,   1,    0,    0,   1,    1,    false},
 };
 
 //------------------------------------------------------------------------

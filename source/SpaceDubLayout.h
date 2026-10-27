@@ -128,7 +128,7 @@ constexpr Section kSections[] = {
 	{ "CLOCK",    "tempo sync + master",               Accent::Clock,    kClockRect    },
 	{ "DELAY",    "time + regen",                      Accent::Delay,    kDelayRect    },
 	{ "FEEDBACK", "",                                  Accent::Feedback, kFeedbackRect },
-	{ "FILTER",   "ladder low-pass",                   Accent::Filter,   kFilterRect   },
+	{ "FILTER",   "ladder low / high-pass",                   Accent::Filter,   kFilterRect   },
 	{ "OUTPUT",   "levels",                            Accent::Output,   kOutputRect   },
 };
 constexpr int kNumSections = static_cast<int> (sizeof (kSections) / sizeof (kSections[0]));
@@ -230,6 +230,14 @@ constexpr Control lamp (Steinberg::Vst::ParamID tag, Accent a, int cx, int cy, c
 	return { tag, Kind::Lamp, a, cx - 10, cy - 10, 92, 11, false, label, 20, cx, cy };
 }
 
+/** A two-position selector with its positions' names printed either side
+    above it and no name of its own: the filter's LP / HP. */
+constexpr Control modeSwitch (Steinberg::Vst::ParamID tag, Accent a, int cx, int cy, int radius)
+{
+	return { tag, Kind::Switch, a, cx - 29, cy - 22, 58, radius * 2, false, "",
+	         radius + 24, cx, cy, 2, NamePlace::Below };
+}
+
 constexpr int kSyncCx = 800, kSyncCy = 178, kSyncRadius = 20;
 
 /** EVERY PARAMETER ON THE PANEL, once each - the tests hold it to that.
@@ -263,14 +271,18 @@ constexpr Control kControls[] = {
 
 	// ---- filter ---------------------------------------------------------
 	knob (kCutoffLeft,     Accent::Filter, 680, kRowLeft - 12,  56, "Cutoff"),
-	knob (kResonanceLeft,  Accent::Filter, 766, kRowLeft - 6,   44, "Resonance"),
-	knob (kFilterGainLeft, Accent::Filter, 848, kRowLeft - 6,   44, "Gain"),
-	switchBelow (kFilterLeftEnable,  Accent::Filter, 906, kRowLeft + 16,  9, "On", 28),
+	knob (kResonanceLeft,  Accent::Filter, 756, kRowLeft - 6,   44, "Resonance"),
+	knob (kFilterGainLeft, Accent::Filter, 830, kRowLeft - 6,   44, "Gain"),
+	switchBelow (kFilterLeftEnable,  Accent::Filter, 896, kRowLeft + 16,  9, "On", 28),
+	modeSwitch  (kFilterModeLeft,    Accent::Filter, 896, kRowLeft + 72,  8),
 	knob (kCutoffRight,     Accent::Filter, 680, kRowRight - 12, 56, "Cutoff"),
-	knob (kResonanceRight,  Accent::Filter, 766, kRowRight - 6,  44, "Resonance"),
-	knob (kFilterGainRight, Accent::Filter, 848, kRowRight - 6,  44, "Gain"),
-	switchBelow (kFilterRightEnable, Accent::Filter, 906, kRowRight + 16, 9, "On", 28),
+	knob (kResonanceRight,  Accent::Filter, 756, kRowRight - 6,  44, "Resonance"),
+	knob (kFilterGainRight, Accent::Filter, 830, kRowRight - 6,  44, "Gain"),
+	switchBelow (kFilterRightEnable, Accent::Filter, 896, kRowRight + 16, 9, "On", 28),
+	modeSwitch  (kFilterModeRight,   Accent::Filter, 896, kRowRight + 72, 8),
 	switchRight (kLinkFilters, Accent::Filter, 720, kLinkY, 8, "Link", 64, NamePlace::RightRed),
+	// Filter Taps: one switch for both sides, on the rule between them
+	switchRight (kFilterTaps, Accent::Filter, 812, kLinkY, 8, "Taps", 64),
 
 	// ---- output ---------------------------------------------------------
 	knob (kTapsGainLeft,         Accent::Output, 1040, kRowLeft - 6,  44, "Taps Gain"),
@@ -284,6 +296,9 @@ constexpr int kNumControls = static_cast<int> (sizeof (kControls) / sizeof (kCon
     EIGHT values and the DXi mapped the last two both to a whole note
     (PORTING-NOTES 9), so seven are printed and value 7 points at WHOLE. */
 constexpr const char* kSyncNames[] = { "Off", "32nd", "16th", "8th", "Qtr", "Half", "Whole" };
+
+/** The printed names round each filter's mode selector. */
+constexpr const char* kFilterModeNames[] = { "LP", "HP" };
 
 //------------------------------------------------------------------------
 // The rotary selectors
