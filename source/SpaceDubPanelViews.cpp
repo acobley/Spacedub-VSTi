@@ -955,7 +955,11 @@ void TapScope::draw (CDrawContext* context)
 	drawLettering (context, "R", kTextScreen, withAlpha (Palette::kTraceRight, lit), r.left + 12., mid + half * 0.5);
 
 	// ---- the dry signal at 0 ---------------------------------------------------
-	strokeLine (context, CPoint (pl, mid - half * 0.9), CPoint (pl, mid + half * 0.9), withAlpha (Palette::kInk, lit), 2.);
+	// as tall as Dry Level lets it be: at 0 nothing of the input is mixed in
+	const double dryH = half * 0.9 * std::clamp (pic.dry, 0.0, 1.0);
+	strokeLine (context, CPoint (pl, mid - half * 0.9), CPoint (pl, mid + half * 0.9), withAlpha (Palette::kInk, 40), 1.);
+	if (dryH > 0.5)
+		strokeLine (context, CPoint (pl, mid - dryH), CPoint (pl, mid + dryH), withAlpha (Palette::kInk, lit), 2.);
 	drawLettering (context, "DRY", kTextScreenSm, Palette::kScreenText, pl + 6., top + 2.);
 
 	// ---- the taps ---------------------------------------------------------------

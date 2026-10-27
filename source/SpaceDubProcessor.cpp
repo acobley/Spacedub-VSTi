@@ -241,7 +241,6 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 	outBus.silenceFlags = 0;
 
 	const bool tapsOut      = paramDef (kTapsOut).toInternal (mParamTargets[kTapsOut]) >= 0.5;
-	const bool straightThru = paramDef (kMainOut).toInternal (mParamTargets[kMainOut]) >= 0.5;
 	const int  tapStart     = tapsOut ? 1 : DelayLine::kNumTaps;
 
 	// --- per-sample interpolation (the DXi's envelope deltas) ------------
@@ -275,6 +274,7 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 	Ramp fbR      = makeRamp (kFeedbackRight);
 	Ramp fgainL   = makeRamp (kFilterGainLeft);
 	Ramp fgainR   = makeRamp (kFilterGainRight);
+	Ramp dry      = makeRamp (kMainOut);   // Dry Level: how much input is mixed in
 
 	float tapsL[DelayLine::kTapArray] = {};
 	float tapsR[DelayLine::kTapArray] = {};
@@ -308,8 +308,8 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 			mTapPeak[tap + 4] = std::max (mTapPeak[tap + 4], std::fabs (tapsR[tap]));
 		}
 
-		float outL = straightThru ? inL : 0.f;
-		float outR = straightThru ? inR : 0.f;
+		float outL = inL * static_cast<float> (dry.value);
+		float outR = inR * static_cast<float> (dry.value);
 
 		// Tap-to-stereo matrix, verbatim from the DXi: tap 5 sits hard in
 		// its own channel, earlier taps walk towards the centre in 10 % steps.
@@ -336,6 +336,7 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		resoL.advance ();   resoR.advance ();
 		fbL.advance ();     fbR.advance ();
 		fgainL.advance ();  fgainR.advance ();
+		dry.advance ();
 	}
 }
 

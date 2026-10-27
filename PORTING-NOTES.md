@@ -67,9 +67,16 @@ identical values to the original.**
 | `PARAM_LEFTFILTERGAIN` / `RIGHT` | Left/RightFilterGain | Filter Gain Left/Right | 0–500 % | 0–3 | 250 |
 | `PARAM_MIDIRATE` | Midi rate | Sync Rate | 0–7 | 0–7 | 0 (Off) |
 | `PARAM_TEMPO` | Tempo | Tempo | 0–300 | 0–300 | 100 |
-| `PARAM_MAINOUT` | Main Out | Straight Thru | 0/1 | 0/1 | 1 |
+| `PARAM_MAINOUT` | Main Out | **Dry Level** (was Straight Thru) | 0–100 % | 0–1 | 100 |
 | — | — | **Bypass** (new, id 1000) | 0/1 | — | 0 |
 | — | — | **Host Tempo** (new, id 1001, read-only) | 0–300 | — | 0 |
+
+`Dry Level` was the DXi's `Straight Thru`, an on/off switch for the dry
+signal. On the `Polivoks` branch it became a continuous gain, 0–100 % of the
+input mixed in with the echoes, ramped per sample like the other smoothed
+parameters. It keeps the id and the normalised ends, so a preset or automation
+saved with Straight Thru on loads as 100 % and off as 0 % — what the switch
+did. The default is still 100 %.
 
 `Host Tempo` is not a control. It is the processor reporting the tempo the
 **host** supplied — zero when it supplied none — so the editor can show it and

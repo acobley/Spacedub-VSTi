@@ -398,6 +398,7 @@ void SpaceDubEditor::refreshDependents (ParamID tag)
 		case kDelayLeft:
 		case kDelayRight:
 		case kTapsOut:
+		case kMainOut:
 		case kFilterLeftEnable:
 		case kFilterRightEnable:
 			refreshTapScope ();
@@ -430,6 +431,7 @@ void SpaceDubEditor::refreshTapScope ()
 	pic.filter[0] = isOn (kFilterLeftEnable);
 	pic.filter[1] = isOn (kFilterRightEnable);
 	pic.enabled   = isOn (kEnable) && !isOn (kBypass);
+	pic.dry       = normalizedOf (kMainOut);
 	for (int ch = 0; ch < 2; ++ch)
 		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
 			pic.level[ch][tap - 1] = normalizedOf (tapLevelId (ch, tap));

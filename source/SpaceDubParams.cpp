@@ -41,7 +41,7 @@ const ParamDef kParams[kNumParams] = {
 	{kFilterGainRight,      "Filter Gain Right",     "%",   ParamType::Float,   0,   500,  250,  0,   3,    0,    true },
 	{kMidiRate,             "Sync Rate",             "",    ParamType::Enum,    0,   7,    0,    0,   7,    7,    false},
 	{kTempo,                "Tempo",                 "BPM", ParamType::Enum,    0,   300,  100,  0,   300,  300,  false},
-	{kMainOut,              "Straight Thru",         "",    ParamType::Bool,    0,   1,    1,    0,   1,    1,    false},
+	{kMainOut,              "Dry Level",             "%",   ParamType::Float,   0,   100,  100,  0,   1,    0,    true },
 };
 
 //------------------------------------------------------------------------

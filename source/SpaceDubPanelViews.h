@@ -242,6 +242,7 @@ struct TapPicture
 	bool   tapsOut  = false;          // taps 1-4 in the output, or tap 5 only
 	bool   filter[2] = { false, false };
 	bool   enabled  = true;
+	double dry      = 1.0;            // Dry Level, 0..1: the height of the DRY line
 	std::string annotation;           // top right, e.g. "64 MS / TAP"
 	/** How much signal is coming out of each tap right now: the
 	    processor's meters (kTapLevelOut), 0..1 = -60..+6 dBFS.

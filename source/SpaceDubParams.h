@@ -50,7 +50,10 @@ enum Param : Steinberg::Vst::ParamID
 	kFilterGainRight,       // "RightFilterGain"
 	kMidiRate,              // tempo-sync division, 0 = off
 	kTempo,                 // manual tempo, 0 = follow the host
-	kMainOut,               // "Main Out" - dry signal straight through
+	kMainOut,               // "Main Out" - the dry signal. The DXi's Straight Thru was an
+	                        // on/off switch; since branch Polivoks it is Dry Level, 0..100 %
+	                        // of the input mixed in with the echoes. Same id and the same
+	                        // normalised ends, so a saved "on" loads as 100 % and "off" as 0.
 
 	kNumParams,
 

@@ -241,10 +241,10 @@ constexpr Control kControls[] = {
 	{ kMidiRate, Kind::Switch, Accent::Clock, 736, 126, 132, kSyncRadius * 2, false, "Sync Rate", 116,
 	  kSyncCx, kSyncCy, 7, NamePlace::Below },
 	knob (kTempo, Accent::Clock, 968, 186, 44, "Tempo"),
-	switchRight (kMainOut, Accent::Clock, 1100, 132, 10, "Thru", 82),
-	switchRight (kTapsOut, Accent::Clock, 1100, 180, 10, "Taps Out", 82),
-	lamp (kEnable, Accent::Clock, 1090, 236, "Enabled"),
-	lamp (kBypass, Accent::Clock, 1090, 266, "Bypass"),
+	knob (kMainOut, Accent::Clock, 1125, 106, 44, "Dry"),
+	switchRight (kTapsOut, Accent::Clock, 1100, 206, 10, "Taps Out", 82),
+	lamp (kEnable, Accent::Clock, 1090, 246, "Enabled"),
+	lamp (kBypass, Accent::Clock, 1090, 272, "Bypass"),
 
 	// ---- delay ----------------------------------------------------------
 	knob (kDelayLeft,      Accent::Delay, 110, kRowLeft - 12,  56, "Delay"),
