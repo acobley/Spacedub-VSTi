@@ -6,6 +6,8 @@
 #   tools/run-tests.sh
 #
 # The delay-line suite needs no SDK and no host - a C++17 compiler is enough.
+# The layout suite needs the VST3 SDK's headers (for the ParamID type only):
+# external/vst3sdk, which the first configure fetches, or $VST3_SDK_ROOT.
 #-----------------------------------------------------------------------------
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
@@ -20,6 +22,19 @@ if $CXX -std=c++17 -O2 -I"$ROOT/source" "$ROOT/tests/DelayLineTests.cpp" \
 	"$OUT/delayline-tests" || FAILED=$((FAILED + 1))
 else
 	echo "FAILED TO BUILD: delay-line tests"
+	FAILED=$((FAILED + 1))
+fi
+
+printf '\n===== layout tests\n'
+SDK="${VST3_SDK_ROOT:-$ROOT/external/vst3sdk}"
+if [ ! -f "$SDK/pluginterfaces/vst/vsttypes.h" ]; then
+	echo "NO SDK at $SDK - configure once, or set VST3_SDK_ROOT"
+	FAILED=$((FAILED + 1))
+elif $CXX -std=c++17 -O2 -I"$ROOT/source" -I"$SDK" "$ROOT/tests/LayoutTests.cpp" \
+        -o "$OUT/layout-tests"; then
+	"$OUT/layout-tests" || FAILED=$((FAILED + 1))
+else
+	echo "FAILED TO BUILD: layout tests"
 	FAILED=$((FAILED + 1))
 fi
 

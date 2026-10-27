@@ -280,8 +280,11 @@ set(spacedub_sources
     source/SpaceDubProcessor.cpp
     source/SpaceDubController.h
     source/SpaceDubController.cpp
-    source/SpaceDubControls.h
-    source/SpaceDubControls.cpp
+    source/SciFiLettering.h
+    source/SpaceDubLayout.h
+    source/PanelWear.h
+    source/SpaceDubPanelViews.h
+    source/SpaceDubPanelViews.cpp
     source/SpaceDubEditor.h
     source/SpaceDubEditor.cpp
     source/SpaceDubEntry.cpp
@@ -301,21 +304,8 @@ target_link_libraries(SpaceDub
         vstgui_support
 )
 
-smtg_target_add_plugin_resources(SpaceDub
-    RESOURCES
-        resource/background.png
-        resource/handle_v.png
-        resource/handle_h.png
-        resource/groove_v.png
-        resource/groove_h.png
-        resource/button_small.png
-        resource/button_filter.png
-        resource/button_power.png
-        resource/logo.png
-        resource/knob.png
-        resource/scale.png
-        resource/dot.png
-)
+# No artwork: the black panel (branch Polivoks) draws everything, its
+# lettering included, as paths - see source/SpaceDubPanelViews.h.
 
 if(SMTG_MAC)
     smtg_target_set_bundle(SpaceDub

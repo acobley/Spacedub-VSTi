@@ -18,3 +18,5 @@ installer/.built-from
 *.pfx
 *.p8
 AuthKey_*
+build-render/
+build-sdk/

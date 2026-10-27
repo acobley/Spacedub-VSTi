@@ -179,6 +179,17 @@ accepted and the single channel is fed to both delay lines.
 
 ## 5. The interface
 
+> **Superseded on the `Polivoks` branch (27 Oct 2026).** The bitmap panel this
+> section describes was replaced by a 1200 × 640 black panel drawn entirely
+> with paths — R2Synth's Polivoks-style views, its 70s sci-fi lettering and
+> its "Studio Worn" wear, laid out from `Designs/SpaceDub-Polivoks-1-TapScope.png`.
+> The layout is data in `source/SpaceDubLayout.h`, checked by
+> `tests/LayoutTests.cpp`; the views are `source/SpaceDubPanelViews.*`. What
+> did NOT change: `readoutFor()` (bar the cutoff, now in kHz above 1 kHz), `tempoText()` and `applyLink()` (sections 7
+> and below) are the same code, so every number and every link behaves as
+> before. `SpaceDubControls.*` and the PNGs in `resource/` are gone; the
+> section below is kept as the record of how the original was ported.
+
 `IDD_PROPPAGE` in `SpaceDubMidi.rc` is 515 × 287 dialog units with a
 `SS_BITMAP` static holding `res/background-all.bmp` (766 × 499 pixels) at
 `(3, 0)` sized `511 × 307` DLU. That gives the conversion factors:
