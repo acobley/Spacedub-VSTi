@@ -212,7 +212,7 @@ history.)
 
 | Section | What is there |
 |---|---|
-| **Echo** | the *tap scope*: each channel's five taps on a time axis — left up in green, right down in blue — the bar heights showing how much of each tap is heard on its own side, the dim bars the share that crosses over. Taps that aren't in the output (Taps Out off) are outlines; **F** marks the tap the filter replaces |
+| **Echo** | the *tap scope*: each channel's five taps on a time axis — left up in green, right down in blue, both centred on the tap's time. Each tap's frame is the share heard on its own side; the fill inside it is **how much signal is going through that tap now** (a meter, −60 … +6 dBFS, the figure printed by the tap's number). The small frame over the other channel's bar is the share that crosses over, with a mark at the level crossing now. Taps that aren't in the output (Taps Out off) are dimmed; **F** marks the tap the filter replaces |
 | **Clock** | Sync Rate (Off, 32nd … Whole), the tempo screen (the host's tempo when it gives one), the manual Tempo knob (Auto = follow the host), Thru (Straight Thru), Taps Out, and the **Enabled** and **Bypass** lamps |
 | **Delay** | Delay and Loop Scale, a row for L over a row for R |
 | **Feedback** | Feedback L / R, and the Main FB and Taps FB switches |

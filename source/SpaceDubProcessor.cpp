@@ -300,6 +300,14 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		mDelayL.process (inL, tapsL);
 		mDelayR.process (inR, tapsR);
 
+		// The tap meters: every tap's peak, whether or not Taps Out puts
+		// it in the output - the signal goes through it either way.
+		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+		{
+			mTapPeak[tap - 1] = std::max (mTapPeak[tap - 1], std::fabs (tapsL[tap]));
+			mTapPeak[tap + 4] = std::max (mTapPeak[tap + 4], std::fabs (tapsR[tap]));
+		}
+
 		float outL = straightThru ? inL : 0.f;
 		float outR = straightThru ? inR : 0.f;
 
@@ -382,11 +390,54 @@ tresult PLUGIN_API SpaceDubProcessor::process (ProcessData& data)
 			processAudio<Sample32> (data);
 	}
 
+	const bool running = !mBypass && paramDef (kEnable).toInternal (mParamTargets[kEnable]) >= 0.5;
+	publishTapMeters (data, running);
+
 	// The block has been rendered; this block's targets become the next
 	// block's starting point.
 	std::memcpy (mParams, mParamTargets, sizeof (mParams));
 
 	return kResultOk;
+}
+
+//------------------------------------------------------------------------
+/** THE TAP METERS, for the tap scope: each tap's peak this block becomes a
+    meter value (tapMeterValue: -60..+6 dBFS) that jumps up at once and
+    falls back at 20 dB a second, and goes to the controller through
+    outputParameterChanges - the only route from the audio thread, see the
+    host tempo above. About 30 times a second, and only the meters that
+    moved; switched off or bypassed, the meters fall to zero. */
+void SpaceDubProcessor::publishTapMeters (ProcessData& data, bool running)
+{
+	constexpr double kFallDbPerSecond = 20.0;
+	const double seconds = (mSampleRate > 0.0) ? data.numSamples / mSampleRate : 0.0;
+	const double fall = kFallDbPerSecond * seconds / (kTapMeterTopDb - kTapMeterFloorDb);
+
+	for (int i = 0; i < 10; ++i)
+	{
+		const double now = running ? tapMeterValue (mTapPeak[i]) : 0.0;
+		mTapMeter[i] = std::max (now, mTapMeter[i] - fall);
+		mTapPeak[i] = 0.f;
+	}
+
+	mMeterSamples += data.numSamples;
+	if (mMeterSamples < static_cast<int64> (mSampleRate / 30.0) || !data.outputParameterChanges)
+		return;
+	mMeterSamples = 0;
+
+	for (int i = 0; i < 10; ++i)
+	{
+		const double v = std::floor (mTapMeter[i] * 200.0 + 0.5) / 200.0;   // half-dB steps, roughly
+		if (v == mTapMeterSent[i])
+			continue;
+		int32 index = 0;
+		if (auto* queue = data.outputParameterChanges->addParameterData (kTapLevelOut + i, index))
+		{
+			int32 pointIndex = 0;
+			queue->addPoint (0, v, pointIndex);
+			mTapMeterSent[i] = v;
+		}
+	}
 }
 
 //------------------------------------------------------------------------

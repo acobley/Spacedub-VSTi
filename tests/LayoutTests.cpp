@@ -16,11 +16,14 @@
 //      rectangle; every selector's printed names and its own name fit its.
 //   5. Section titles and subtitles fit their sections.
 //   6. The wear stays on the panel, off the glass, and faint enough.
+//   7. The tap meters' scale (SpaceDubParams.h), which the processor
+//      writes and the tap scope reads.
 //------------------------------------------------------------------------
 
 #include "PanelWear.h"
 #include "SpaceDubLayout.h"
 
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -195,6 +198,22 @@ int main ()
 	}
 	chk (Wear::glassWear (0).prints.size () == 1 && Wear::glassWear (1).prints.size () == 1,
 	     "one fingerprint on each screen");
+
+	// ---- 7. the tap meters' scale -------------------------------------------------
+	std::printf ("7. the tap meters' scale\n");
+	auto near = [] (double a, double b) { return std::fabs (a - b) < 1e-9; };
+	chk (tapMeterValue (0.0) == 0.0, "silence is not 0");
+	chk (tapMeterValue (-1.0) == 0.0, "a negative peak is not 0");
+	chk (tapMeterValue (1e-4) == 0.0, "-80 dBFS is not at the floor");
+	chk (near (tapMeterValue (1.0), 60.0 / 66.0), "0 dBFS is not 60/66 up the scale");
+	chk (tapMeterValue (4.0) == 1.0, "+12 dBFS does not clamp at the top");
+	for (double db = -60.0; db <= 6.0; db += 6.0)
+		chk (std::fabs (tapMeterDb (tapMeterValue (std::pow (10.0, db / 20.0))) - db) < 1e-6,
+		     "tapMeterDb does not invert tapMeterValue at " + std::to_string (db) + " dB");
+	for (int ch = 0; ch < 2; ++ch)
+		for (int tap = 1; tap <= 5; ++tap)
+			chk (isTapLevel (tapLevelId (ch, tap)), "a tap level id is out of range");
+	chk (!isTapLevel (kHostTempoOut) && !isTapLevel (kTapLevelOutEnd), "isTapLevel takes a neighbour");
 
 	if (fails)
 	{

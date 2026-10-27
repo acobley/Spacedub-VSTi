@@ -325,6 +325,18 @@ registered `kIsReadOnly`, add a point, and the host delivers it to
 `kHostTempoOut`. It is deliberately *not* saved in the state — it is a readout,
 not a setting — so `getState`/`setState` still write only `kNumParams` values.
 
+**The tap meters use the same route** (branch `Polivoks`). The tap scope
+shows how much signal is going through each of the ten taps, so the processor
+measures each tap's peak per block in `processAudio`, turns it into a meter
+value (`tapMeterValue`: −60 … +6 dBFS, linear in dB, rising at once and
+falling back at 20 dB a second), and writes it into `outputParameterChanges`
+as ten read-only parameters, `kTapLevelOut` … `kTapLevelOut + 9` (ids
+1002–1011: left taps 1–5, then right). It publishes about 30 times a second
+and only the meters that moved. Like `kHostTempoOut` they are not saved. The
+meters measure the tap itself, so a tap that Taps Out leaves out of the mix
+still shows its signal (dimmed on the scope). When the plug-in is switched off
+or bypassed they fall to zero.
+
 Messages are still fine from `setActive`, `setState`, `initialize` and the like,
 which VST3 documents as `[UI-thread]`; that is why the sample rate can go that
 way. If in doubt, check the interface's thread annotation in the SDK headers

@@ -923,7 +923,7 @@ void TapScope::draw (CDrawContext* context)
 	const uint8_t lit = pic.enabled ? 255 : 80;   // switched off: the picture dims
 
 	// ---- the lettering round the edge --------------------------------------
-	drawLettering (context, "TAP SCOPE", kTextScreen, Palette::kScreenText, r.left + 8., r.top + 11.);
+	drawLettering (context, "TAP SCOPE  /  LEVELS IN DBFS", kTextScreen, Palette::kScreenText, r.left + 8., r.top + 11.);
 	if (!pic.annotation.empty ())
 		drawLettering (context, pic.annotation, kTextScreen, pic.enabled ? Palette::kTraceLeft : Palette::kRed,
 		               r.right - 8., r.top + 11., Align::Right);
@@ -960,24 +960,31 @@ void TapScope::draw (CDrawContext* context)
 
 	// ---- the taps ---------------------------------------------------------------
 	// Both channels' bars are CENTRED ON THE TAP'S TIME, so a left and a right
-	// tap at the same time sit on one vertical line. Each tap's share on the
-	// OTHER side is drawn second, over the other channel's bar, as an outline
-	// with a level mark at its top - so it reads as "this much of it crosses
-	// over" without a bar of its own beside the real one.
+	// tap at the same time sit on one vertical line. The FRAME is the share
+	// heard on that side; the FILL inside it is how much signal is going
+	// through the tap now (the processor's meter). The share that crosses to
+	// the OTHER side is drawn second, over the other channel's bar.
 	constexpr double kHalfBar = 5.0;
 	const bool sameTimes = std::fabs (pic.tapMs[0] - pic.tapMs[1]) < 0.5;
 	struct Tap
 	{
-		double x, h, leak;
+		double x, h, leak, level;
 		bool heard;
 	};
 	auto tapOf = [&] (int side, int n) {
 		const double own = 1.0 - (DelayLineTaps - n) / 10.0;   // DelayLine's matrix
 		return Tap { xOf (n * pic.tapMs[side]), own * half * 0.92, (1.0 - own) * half * 0.92,
-		             pic.tapsOut || n == DelayLineTaps };
+		             std::clamp (pic.level[side][n - 1], 0.0, 1.0), pic.tapsOut || n == DelayLineTaps };
+	};
+	auto dbText = [] (double level) -> std::string {
+		if (level <= 0.0)
+			return {};
+		char buf[16];
+		std::snprintf (buf, sizeof (buf), "%.0f", tapMeterDb (level));
+		return buf;
 	};
 
-	// pass 1: each channel's own bars - left up, right down
+	// pass 1: each channel's own frame and fill - left up, right down
 	for (int side = 0; side < 2; ++side)
 	{
 		const CColor trace = side ? Palette::kTraceRight : Palette::kTraceLeft;
@@ -985,50 +992,63 @@ void TapScope::draw (CDrawContext* context)
 		for (int n = 1; n <= DelayLineTaps; ++n)
 		{
 			const Tap t = tapOf (side, n);
-			const CRect bar = side ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + t.h)
-			                       : CRect (t.x - kHalfBar, mid - t.h, t.x + kHalfBar, mid);
-			if (t.heard)
+			// not in the output: the signal goes through, but dimmed
+			const uint8_t tapLit = static_cast<uint8_t> (lit * (t.heard ? 1.0 : 0.45));
+
+			// the frame: the share heard on this side
+			const CRect frameRect = side ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + t.h)
+			                             : CRect (t.x - kHalfBar, mid - t.h, t.x + kHalfBar, mid);
 			{
-				auto path = owned (context->createGraphicsPath ());
-				auto gradient = owned (CGradient::create (0.0, 1.0, withAlpha (trace, static_cast<uint8_t> (lit * 0.95)),
-				                                          withAlpha (trace, static_cast<uint8_t> (lit * 0.3))));
-				if (path && gradient)
-				{
-					path->addRect (bar);
-					context->fillLinearGradient (path, *gradient, CPoint (t.x, mid + dir * t.h), CPoint (t.x, mid));
-				}
-				// the bloom along its far edge
-				strokeLine (context, CPoint (bar.left, mid + dir * t.h), CPoint (bar.right, mid + dir * t.h),
-				            withAlpha (trace, static_cast<uint8_t> (lit * 0.6)), 1.6);
-			}
-			else
-			{
-				context->setFrameColor (withAlpha (trace, static_cast<uint8_t> (lit * 0.55)));
+				context->setFrameColor (withAlpha (trace, static_cast<uint8_t> (tapLit * 0.5)));
 				context->setLineWidth (1.);
 				context->setLineStyle (kLineSolid);
-				CRect o = bar;
+				CRect o = frameRect;
 				o.inset (0.5, 0.5);
 				context->drawRect (o, kDrawStroked);
 			}
 
-			// the filter replaces tap 5: an F beside the bar's far end
+			// the fill: the signal going through the tap now
+			const double f = t.h * t.level;
+			if (f > 0.5)
+			{
+				const CRect fill = side ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + f)
+				                        : CRect (t.x - kHalfBar, mid - f, t.x + kHalfBar, mid);
+				auto path = owned (context->createGraphicsPath ());
+				auto gradient = owned (CGradient::create (0.0, 1.0, withAlpha (trace, static_cast<uint8_t> (tapLit * 0.95)),
+				                                          withAlpha (trace, static_cast<uint8_t> (tapLit * 0.3))));
+				if (path && gradient)
+				{
+					path->addRect (fill);
+					context->fillLinearGradient (path, *gradient, CPoint (t.x, mid + dir * f), CPoint (t.x, mid));
+				}
+				// the bloom along the fill's edge
+				strokeLine (context, CPoint (fill.left, mid + dir * f), CPoint (fill.right, mid + dir * f),
+				            withAlpha (trace, static_cast<uint8_t> (tapLit * 0.7)), 1.6);
+			}
+
+			// the filter replaces tap 5: an F beside the frame's far end
 			if (n == DelayLineTaps && pic.filter[side])
 				drawLettering (context, "F", kTextScreenSm, withAlpha (trace, lit), t.x + kHalfBar + 5.,
 				               mid + dir * (t.h - 5.), Align::Centre);
 
-			// the tap numbers: over the left's taps along the top, and under
-			// the right's as well when the two sides' times differ
+			// the tap's number and its level in dBFS: the left's along the
+			// top; the right's along the bottom, numbered there too when
+			// the two sides' times differ
+			std::string label;
 			if (side == 0 || !sameTimes)
-			{
-				char buf[8];
-				std::snprintf (buf, sizeof (buf), "T%d", n);
-				drawLettering (context, buf, kTextScreenSm, Palette::kScreenText, t.x, side ? bottom + 3. : top + 2.,
-				               Align::Centre);
-			}
+				label = "T" + std::to_string (n);
+			const std::string db = dbText (t.level);
+			if (!db.empty ())
+				label += label.empty () ? db : " " + db;
+			if (!label.empty ())
+				drawLettering (context, label, kTextScreenSm, side == 0 || !sameTimes ? Palette::kScreenText
+				                                                                       : withAlpha (trace, 200),
+				               t.x, side ? bottom + 3. : top + 2., Align::Centre);
 		}
 	}
 
-	// pass 2: the share that crosses over, on top of the other side's bar
+	// pass 2: the share that crosses over, on top of the other side's bar -
+	// a small frame for the share, a bright mark for the signal crossing now
 	for (int side = 0; side < 2; ++side)
 	{
 		const CColor trace = side ? Palette::kTraceRight : Palette::kTraceLeft;
@@ -1040,13 +1060,15 @@ void TapScope::draw (CDrawContext* context)
 				continue;
 			CRect cross = (dir > 0) ? CRect (t.x - kHalfBar, mid, t.x + kHalfBar, mid + t.leak)
 			                        : CRect (t.x - kHalfBar, mid - t.leak, t.x + kHalfBar, mid);
-			cross.inset (1.0, 0.0);
-			context->setFrameColor (withAlpha (trace, static_cast<uint8_t> (lit * 0.7)));
+			cross.inset (1.5, 0.0);
+			context->setFrameColor (withAlpha (trace, static_cast<uint8_t> (lit * 0.55)));
 			context->setLineWidth (1.);
 			context->setLineStyle (kLineSolid);
 			context->drawRect (cross, kDrawStroked);
-			strokeLine (context, CPoint (cross.left - 1., mid + dir * t.leak), CPoint (cross.right + 1., mid + dir * t.leak),
-			            withAlpha (trace, lit), 2.);
+			const double m = t.leak * t.level;
+			if (m > 0.5)
+				strokeLine (context, CPoint (cross.left - 1., mid + dir * m), CPoint (cross.right + 1., mid + dir * m),
+				            withAlpha (trace, lit), 2.);
 		}
 	}
 

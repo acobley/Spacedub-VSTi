@@ -410,6 +410,9 @@ void SpaceDubEditor::refreshDependents (ParamID tag)
 			break;
 
 		default:
+			// the processor's tap meters, about 30 times a second
+			if (isTapLevel (tag))
+				refreshTapScope ();
 			break;
 	}
 }
@@ -427,6 +430,9 @@ void SpaceDubEditor::refreshTapScope ()
 	pic.filter[0] = isOn (kFilterLeftEnable);
 	pic.filter[1] = isOn (kFilterRightEnable);
 	pic.enabled   = isOn (kEnable) && !isOn (kBypass);
+	for (int ch = 0; ch < 2; ++ch)
+		for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
+			pic.level[ch][tap - 1] = normalizedOf (tapLevelId (ch, tap));
 
 	char buf[48] = {};
 	if (!isOn (kEnable))

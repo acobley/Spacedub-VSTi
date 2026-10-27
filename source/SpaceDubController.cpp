@@ -92,6 +92,21 @@ tresult PLUGIN_API SpaceDubController::initialize (FUnknown* context)
 	parameters.addParameter (STR16 ("Host Tempo"), STR16 ("BPM"), 0, 0.0,
 	                         ParameterInfo::kIsReadOnly, kHostTempoOut);
 
+	// Read-only: the tap meters for the tap scope (kTapLevelOut). Likewise
+	// not automatable and not saved.
+	for (int ch = 0; ch < 2; ++ch)
+	{
+		for (int tap = 1; tap <= 5; ++tap)
+		{
+			char name[32];
+			std::snprintf (name, sizeof (name), "Tap %c%d Level", ch ? 'R' : 'L', tap);
+			String128 title {};
+			for (int i = 0; name[i] && i < 127; ++i)
+				title[i] = static_cast<char16> (name[i]);
+			parameters.addParameter (title, nullptr, 0, 0.0, ParameterInfo::kIsReadOnly, tapLevelId (ch, tap));
+		}
+	}
+
 	return kResultOk;
 }
 

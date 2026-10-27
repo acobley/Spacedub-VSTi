@@ -243,21 +243,36 @@ struct TapPicture
 	bool   filter[2] = { false, false };
 	bool   enabled  = true;
 	std::string annotation;           // top right, e.g. "64 MS / TAP"
+	/** How much signal is coming out of each tap right now: the
+	    processor's meters (kTapLevelOut), 0..1 = -60..+6 dBFS.
+	    [channel][tap - 1]. */
+	double level[2][5] = {};
 };
 
 /** THE TAP SCOPE - the echo section's OLED.
 
-    A time axis across the middle. Each channel's five taps are bars
-    CENTRED on n x its per-tap delay, so a left and a right tap at the
-    same time share one vertical line: the LEFT channel's go UP from the
-    axis in green, the RIGHT's DOWN in pale blue. A bar's height is how
-    much of that tap is heard on its own side - DelayLine's matrix gives
-    tap n 1 - (5 - n) / 10 of its own channel, so tap 5 is hard-panned
-    and tap 1 sits at 60/40 - and the share that crosses over is an
-    outline with a level mark on the far side of the axis, drawn over
-    the other channel's bar. A tap that is not in the output (Taps
-    Out off: only tap 5 is) is drawn as an outline. A tap whose channel
-    has its filter on is marked F: the filter replaces tap 5.
+    A time axis across the middle. Each channel's five taps sit CENTRED
+    on n x its per-tap delay, so a left and a right tap at the same time
+    share one vertical line: the LEFT channel's go UP from the axis in
+    green, the RIGHT's DOWN in pale blue.
+
+    Each tap is a FRAME and a FILL:
+
+      the frame   how much of that tap is heard on its own side -
+                  DelayLine's matrix gives tap n 1 - (5 - n) / 10 of its
+                  own channel, so tap 5's frame is full height and tap 1's
+                  six tenths. Fixed by the settings.
+      the fill    how much signal is going through the tap NOW - the
+                  processor's meter for it, -60..+6 dBFS up the frame -
+                  so the fill is the signal that tap puts on that side.
+                  Empty when no audio is playing.
+
+    The tap's figure in dBFS is printed by its number. The share that
+    crosses to the other side is a small frame on the far side of the
+    axis, drawn over the other channel's bar, with a bright mark at the
+    level crossing over. A tap that is not in the output (Taps Out off:
+    only tap 5 is) is drawn dimmed - the signal goes through it but is
+    not heard. F marks the tap the filter replaces.
 
     Mouse-disabled. */
 class TapScope : public VSTGUI::CView
