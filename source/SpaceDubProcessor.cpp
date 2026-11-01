@@ -4,6 +4,7 @@
 
 #include "SpaceDubProcessor.h"
 #include "SpaceDubIDs.h"
+#include "DenormalGuard.h"
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/vst/ivstmessage.h"
@@ -355,6 +356,10 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 //------------------------------------------------------------------------
 tresult PLUGIN_API SpaceDubProcessor::process (ProcessData& data)
 {
+	// Flush-to-zero for this call only; the host's FPU mode comes back on
+	// return. See DenormalGuard.h.
+	ScopedFlushDenormals noDenormals;
+
 	applyParameterChanges (data.inputParameterChanges);
 
 	// The host's tempo, or zero if it gave us none - see kHostTempoOut.

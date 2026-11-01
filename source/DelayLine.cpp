@@ -27,6 +27,28 @@ inline double scrub (double v)
 		return 0.0;
 	return std::clamp (v, -kCeiling, kCeiling);
 }
+
+/** The floor under the line: anything smaller is set to zero where the line
+    is written.  1e-30 is about -600 dBFS - far below anything audible, but
+    well above float's denormal range (< 1.2e-38), so a decaying echo goes
+    straight to zero instead of spending many passes round the loop as slow
+    denormals.  Above the floor nothing changes. */
+constexpr float kLineFloor = 1.0e-30f;
+
+inline float flushTiny (float v)
+{
+	return (v > -kLineFloor && v < kLineFloor) ? 0.f : v;
+}
+
+/** What may be written back into the line: finite, within the ceiling,
+    and not below the floor. */
+inline float boundLine (float v)
+{
+	if (!std::isfinite (v))
+		return 0.f;
+	return std::clamp (flushTiny (v), static_cast<float> (-kCeiling),
+	                   static_cast<float> (kCeiling));
+}
 } // anonymous namespace
 
 //------------------------------------------------------------------------
@@ -95,7 +117,7 @@ void DelayLine::process (float input, float* taps)
 		return;
 
 	float* line = mLine.data ();
-	line[mAddPos] = input;
+	line[mAddPos] = flushTiny (input);         // NaN / overs are caught below
 
 	long removePos    = mAddPos;
 	long oldRemovePos = mAddPos;
@@ -123,10 +145,7 @@ void DelayLine::process (float input, float* taps)
 			// mTapFeedback is per tap (branch Polivoks); at its default of 1
 			// the product is exactly the DXi's mScale.
 			const float v = line[oldRemovePos] + (mScale * mTapFeedback[ix]) * line[removePos];
-			line[oldRemovePos] = std::isfinite (v)
-			                         ? std::clamp (v, static_cast<float> (-kCeiling),
-			                                       static_cast<float> (kCeiling))
-			                         : 0.f;
+			line[oldRemovePos] = boundLine (v);
 			oldRemovePos = removePos;
 		}
 	}
@@ -163,13 +182,9 @@ void DelayLine::process (float input, float* taps)
 		line[mAddPos] = line[mAddPos] + static_cast<float> (mMainFeedbackValue * eqSample);
 
 	// Safety net the DXi did not have: 200 % feedback combined with a
-	// resonant filter at 500 % gain is a genuine runaway.
-	if (!std::isfinite (line[mAddPos]))
-		line[mAddPos] = 0.f;
-	else
-		line[mAddPos] = std::clamp (line[mAddPos],
-		                            static_cast<float> (-kCeiling),
-		                            static_cast<float> (kCeiling));
+	// resonant filter at 500 % gain is a genuine runaway - and, the other
+	// way, a dying echo must not decay into denormals.
+	line[mAddPos] = boundLine (line[mAddPos]);
 
 	mLastValid = mAddPos;
 	if (++mAddPos >= mLength)

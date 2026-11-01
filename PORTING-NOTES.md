@@ -166,8 +166,40 @@ original simply let the numbers explode (a five-second worst-case run reaches
 
 Below ±16 nothing changes — the default-settings test produces bit-identical
 peak and RMS with and without the clamps. The same worst-case run now peaks
-at 48 instead of 3 × 10¹⁵. Denormals and non-finite values are also flushed,
-which the original did not do.
+at 48 instead of 3 × 10¹⁵. Non-finite values are also flushed, which the original did not do.
+
+**Denormals.** The first pass at this only covered the ladder filter: `scrub()`
+sets any filter state under 1e-15 to zero. The delay line itself was not
+covered, so with the filter off — where nothing passes through `scrub()` — every
+dying echo spent hundreds of passes round the loop as float denormals
+(below ~1.2 × 10⁻³⁸). Measured on x86_64, 120 s of a burst then silence:
+`DelayLine::process` took 7× as long with main feedback at 90 %, and 16× as
+long with Taps Feedback on. Apple Silicon handles denormals far more cheaply,
+but the bundle also ships for Intel Macs. Two fixes:
+
+* **A floor under the line.** Wherever the line is written — the input, the
+  tap-to-tap regeneration and the main feedback write-back — anything under
+  1e-30 (about −600 dBFS) is set to zero (`flushTiny` / `boundLine` in
+  `DelayLine.cpp`). That is well above the denormal range, so a tail goes
+  straight to zero. Above the floor nothing changes: six 3-million-sample
+  renders (both feedback paths, LP and HP, Filter Taps) match the previous build
+  bit for bit everywhere the old value was 1e-30 or more.
+* **Flush-to-zero during `process()`.** `ScopedFlushDenormals`
+  (`source/DenormalGuard.h`) sets MXCSR FTZ + DAZ on x86_64, or FPCR FZ on
+  arm64, for the length of the call, and puts the host's mode back on return
+  — the FPU mode belongs to the host's thread. It covers everything else on
+  the audio thread: the ramps, the tap matrix, a denormal sample from the host.
+  The asm carries `"memory"` clobbers, with a barrier beside `_mm_setcsr`.
+  Nothing in C++ ties a multiply to the FPU control register, and without
+  them the compiler on arm64 at −O2 scheduled a multiply written inside the
+  guard after the restore (found in ForTran, 1 Nov 2026).
+
+The same x86 run now takes 168 ms and 208 ms, against 715 ms and 2873 ms.
+`tests/DelayLineTests.cpp` check 11 pins the floor: four tails, filter on and
+off, both feedback paths, plus a denormal input sample — none may produce a
+subnormal tap and each must reach exactly zero. (Against the old
+`DelayLine.cpp` it fails, with 2.8 M and 9.4 M subnormal tap samples.) Check 12
+pins the guard: flush-to-zero inside it, the previous mode after it.
 
 **Index safety.** `nRemovePos` was wrapped once (`+= nLength - 1`), which is
 sufficient only because `nDelay ≤ nLength / 5`. An explicit clamp was added so

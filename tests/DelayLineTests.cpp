@@ -27,9 +27,13 @@
 //        leaves tap 5 and the line alone.
 //   10.  Filter Mode: low-pass and high-pass responses, 4-pole slope,
 //        Filter Taps following the mode, the worst case bounded.
+//   11.  Denormals: a dying echo goes to exactly zero, never through
+//        denormals, on both feedback paths and with the filter off.
+//   12.  ScopedFlushDenormals: flush-to-zero inside, the old mode after.
 //------------------------------------------------------------------------
 
 #include "DelayLine.h"
+#include "DenormalGuard.h"
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
@@ -332,6 +336,62 @@ int main () {
         }
         std::printf("   high-pass worst case, 5 s: peak %.1f\n", worst);
         chk(finite && worst <= 16.0 * 3.0 * 2.0 + 1e-3, "high-pass runs away");
+    }
+
+    // 11. Denormals. With the filter off nothing scrubs the line, so before
+    //     the floor in DelayLine a decaying echo spent hundreds of passes
+    //     round the loop as denormals (slow - see DenormalGuard.h). Now it
+    //     must reach exactly zero and never be subnormal on the way.
+    std::printf("11. denormals: echo tails go to zero\n");
+    {
+        auto isSub = [](float v) { return std::fpclassify(v) == FP_SUBNORMAL; };
+        auto tail = [&](float mainFb, float loopScale, bool filter, const char* what) {
+            DelayLine d; d.setSampleRate(48000); d.setDelay(0.05f);  // 960-sample loop
+            d.setTapsOutGain(1.f); d.setMainOutGain(1.f); d.setFilterGain(1.f);
+            d.setMainFeedback(mainFb > 0.f); d.setMainFeedbackValue(mainFb);
+            d.setLoopsFeedback(loopScale > 0.f); d.setScale(loopScale);
+            d.setUseFilter(filter); d.setFrequency(0.6); d.setResonance(0.5);
+            float taps[DelayLine::kTapArray] = {};
+            long subs = 0, lastNonZero = -1;
+            const long n = 48000L * 40;
+            for (long i = 0; i < n; ++i) {
+                // a burst, then silence - with a denormal input mixed in, which
+                // a host may hand us and which must not get into the line
+                const float in = i < 480 ? (float) std::sin(i * 0.1) : (i == 1000 ? 1.0e-40f : 0.f);
+                d.process(in, taps);
+                for (int t = 1; t <= 5; ++t) {
+                    if (isSub(taps[t])) ++subs;
+                    if (taps[t] != 0.f) lastNonZero = i;
+                }
+            }
+            std::printf("   %-34s subnormal tap samples %ld, silent from %.1f s\n",
+                        what, subs, (lastNonZero + 1) / 48000.0);
+            chk(subs == 0, what);
+            chk(lastNonZero < n - 48000, "echo tail never reached zero");
+        };
+        tail(0.9f, 0.f,  false, "main feedback, filter off");
+        tail(0.f,  0.6f, false, "taps feedback, filter off");
+        tail(0.5f, 0.1f, false, "both feedback paths, filter off");
+        tail(0.9f, 0.f,  true,  "main feedback, filter on");
+    }
+
+    // 12. The guard process() runs under: flush-to-zero while it lives, the
+    //     host's mode restored when it goes.
+    std::printf("12. ScopedFlushDenormals\n");
+    if (ScopedFlushDenormals::supported ()) {
+        // Every value through memory (volatile): the guard orders memory
+        // accesses round its mode switch, not register arithmetic.
+        volatile float tiny = 1.0e-37f, half = 0.01f;
+        volatile float before = tiny * half;            // denormal: 1e-39
+        volatile float inside = 1.f;
+        { ScopedFlushDenormals guard; inside = tiny * half; }
+        volatile float after = tiny * half;
+        std::printf("   1e-37 x 0.01: before %g, inside %g, after %g\n", (double) before, (double) inside, (double) after);
+        chk(before != 0.f, "denormals already flushed before the guard (test is meaningless)");
+        chk(inside == 0.f, "guard did not flush to zero");
+        chk(after == before, "guard did not restore the FPU mode");
+    } else {
+        std::printf("   not supported on this architecture - skipped\n");
     }
 
     std::printf(fails ? "\n%d CHECK(S) FAILED\n" : "\nall checks passed\n", fails);

@@ -275,6 +275,7 @@ set(spacedub_sources
     source/SpaceDubParams.h
     source/SpaceDubParams.cpp
     source/DelayLine.h
+    source/DenormalGuard.h
     source/DelayLine.cpp
     source/SpaceDubProcessor.h
     source/SpaceDubProcessor.cpp
