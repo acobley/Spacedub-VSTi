@@ -30,6 +30,8 @@
 //   11.  Denormals: a dying echo goes to exactly zero, never through
 //        denormals, on both feedback paths and with the filter off.
 //   12.  ScopedFlushDenormals: flush-to-zero inside, the old mode after.
+//   13.  Output gains ramped: Feedback Out and Taps Gain moved across a
+//        block, the way processAudio now does it, leave no step.
 //------------------------------------------------------------------------
 
 #include "DelayLine.h"
@@ -392,6 +394,48 @@ int main () {
         chk(after == before, "guard did not restore the FPU mode");
     } else {
         std::printf("   not supported on this architecture - skipped\n");
+    }
+
+    // 13. Feedback Out (tap 5, filtered) and Taps Gain (taps 1-4) are output
+    //     levels. Set once per block, a move jumped at the block boundary - the
+    //     click a stress test found on Feedback Out. processAudio now ramps
+    //     them per sample over the block like Dry Level; this renders the
+    //     same ramp (start + n x (target - start) / block) against the old
+    //     step, on a DC input so the steady output does not move at all.
+    std::printf("13. output gains ramped\n");
+    {
+        const int block = 512, edge = 4096, n = edge + 2 * block;
+        // the largest sample-to-sample move of tap t from edge - 8 on
+        auto worst = [&](bool feedbackOut, bool ramp, float& level) {
+            DelayLine d; d.setSampleRate(48000);
+            d.setDelay(0.05f);                       // tap 5 at 960 samples
+            d.setUseFilter(true); d.setFrequency(0.5); d.setResonance(0.5);
+            const int t = feedbackOut ? 5 : 1;
+            const float from = 2.f, to = 0.f;
+            float taps[DelayLine::kTapArray] = {}, prev = 0.f, big = 0.f;
+            for (int i = 0; i < n; ++i) {
+                float g = from;
+                if (i >= edge)
+                    g = (ramp && i < edge + block) ? from + (to - from) * (float) (i - edge) / block : to;
+                if (feedbackOut) d.setMainOutGain(g); else d.setTapsOutGain(g);
+                d.process(0.25f, taps);
+                if (i == edge - 1) level = std::fabs(taps[t]);
+                if (i >= edge - 8) big = std::max(big, std::fabs(taps[t] - prev));
+                prev = taps[t];
+            }
+            return big;
+        };
+        for (int which = 0; which < 2; ++which) {
+            const bool fbOut = which == 0;
+            float level = 0.f, dummy = 0.f;
+            const float stepped = worst(fbOut, false, level);
+            const float ramped  = worst(fbOut, true, dummy);
+            std::printf("   %-13s 200 %% -> 0 %%: steady %.3f, step %.4f, ramped %.6f per sample\n",
+                        fbOut ? "Feedback Out" : "Taps Gain", level, stepped, ramped);
+            chk(level > 0.1f, "no steady signal on the tap (test is meaningless)");
+            chk(stepped > 0.9f * level, "the old step did not jump (test is meaningless)");
+            chk(ramped < 1.5f * level / block + 1e-4f, "the ramped gain still steps");
+        }
     }
 
     std::printf(fails ? "\n%d CHECK(S) FAILED\n" : "\nall checks passed\n", fails);

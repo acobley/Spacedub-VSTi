@@ -198,10 +198,9 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 	mDelayL.setHighPass (paramDef (kFilterModeLeft).toInternal (mParamTargets[kFilterModeLeft]) >= 0.5);
 	mDelayR.setHighPass (paramDef (kFilterModeRight).toInternal (mParamTargets[kFilterModeRight]) >= 0.5);
 
-	mDelayL.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainLeft).toInternal (mParamTargets[kFeedbackOutGainLeft])));
-	mDelayR.setMainOutGain (static_cast<float> (paramDef (kFeedbackOutGainRight).toInternal (mParamTargets[kFeedbackOutGainRight])));
-	mDelayL.setTapsOutGain (static_cast<float> (paramDef (kTapsGainLeft).toInternal (mParamTargets[kTapsGainLeft])));
-	mDelayR.setTapsOutGain (static_cast<float> (paramDef (kTapsGainRight).toInternal (mParamTargets[kTapsGainRight])));
+	// Feedback Out and Taps Gain are output levels: they are ramped per
+	// sample in processAudio, like Dry Level. Set once per block they
+	// stepped at the block boundary and clicked.
 
 	for (int tap = 1; tap <= DelayLine::kNumTaps; ++tap)
 	{
@@ -288,6 +287,10 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 	Ramp fgainL   = makeRamp (kFilterGainLeft);
 	Ramp fgainR   = makeRamp (kFilterGainRight);
 	Ramp dry      = makeRamp (kMainOut);   // Dry Level: how much input is mixed in
+	Ramp fbOutL   = makeRamp (kFeedbackOutGainLeft);   // tap 5 when filtered
+	Ramp fbOutR   = makeRamp (kFeedbackOutGainRight);
+	Ramp tapsGL   = makeRamp (kTapsGainLeft);          // every other tap
+	Ramp tapsGR   = makeRamp (kTapsGainRight);
 
 	float tapsL[DelayLine::kTapArray] = {};
 	float tapsR[DelayLine::kTapArray] = {};
@@ -306,6 +309,10 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		mDelayR.setMainFeedbackValue (static_cast<float> (fbR.value));
 		mDelayL.setFilterGain (static_cast<float> (fgainL.value));
 		mDelayR.setFilterGain (static_cast<float> (fgainR.value));
+		mDelayL.setMainOutGain (static_cast<float> (fbOutL.value));
+		mDelayR.setMainOutGain (static_cast<float> (fbOutR.value));
+		mDelayL.setTapsOutGain (static_cast<float> (tapsGL.value));
+		mDelayR.setTapsOutGain (static_cast<float> (tapsGR.value));
 
 		const float inL = srcL ? static_cast<float> (srcL[i]) : 0.f;
 		const float inR = srcR ? static_cast<float> (srcR[i]) : inL;
@@ -350,6 +357,8 @@ void SpaceDubProcessor::processAudio (ProcessData& data)
 		fbL.advance ();     fbR.advance ();
 		fgainL.advance ();  fgainR.advance ();
 		dry.advance ();
+		fbOutL.advance (); fbOutR.advance ();
+		tapsGL.advance (); tapsGR.advance ();
 	}
 }
 

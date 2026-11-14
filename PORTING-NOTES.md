@@ -216,6 +216,17 @@ previous block's value across the buffer. The smoothed set is the same one the
 DXi interpolated: delay, loop scale, feedback, cutoff, resonance and filter
 gain, left and right.
 
+Feedback Out and Taps Gain (left and right) were left out of that set, as
+they were in the DXi, and were applied once per block. They are output levels,
+so a move jumped at the block boundary and clicked: a stress test flagged it
+on Feedback Out Left (14 Nov 2026). They are now ramped per sample like the
+rest, and like Dry Level. At a steady setting the ramp's step is zero and the
+value is the same float as before, so renders are bit-identical.
+`tests/DelayLineTests.cpp` check 13 moves each from 200 % to 0 % on a DC input:
+stepped, the output jumps by its whole level in one sample; ramped, by 1/512
+of it. The ten per-tap feedback levels are still set per block; they act
+inside the regeneration loop, not on the output.
+
 **The release tail.** `DelayLine::MoreTailsAvailable` / `Get` are ported
 (`moreTailsAvailable` / `readTail`) but nothing calls them: VST3 handles tails
 by declaring `getTailSamples()` — one full line, 8 seconds — and the host keeps
