@@ -347,6 +347,72 @@ The panel: to make room, Resonance and Gain moved 10 and 18 px left, and the On
 switches 10 px left, so the selector's printed names clear the knobs and the
 section edge. The tap scope's F mark is now LP or HP.
 
+**Moving the taps without clicks (branch `tempo-glide`).** Before this, every
+change of tap position was a jump. `updateDelayLines` sets the sync grid once
+per block from the host's tempo, and `computeTapSamples` snaps to whole grid
+units, so:
+
+* a tempo *step* moved all five taps in one sample - a click (a spike of 0.45
+  on a 0.5 sine);
+* a host tempo *ramp* is a slightly different tempo every block, so the taps
+  jumped a few samples every ~10 ms - zipper noise;
+* turning Delay while synced jumped whole grid units; free-running it moved
+  the taps one integer sample at a time - grit.
+
+`DelayLine` now keeps the integer targets in `mTapSamples` (still what the
+editor quotes) and moves separate read heads, `mPos`, towards them in
+`advanceTaps()`, one of two ways:
+
+* **Glide** - small moves: a one-pole towards the target (`kGlideSeconds`,
+  50 ms) speed-limited to `kGlideMaxRate` (0.03 samples per sample, about half
+  a semitone of bend). The one-pole turns a host's per-block staircase into a
+  near-constant speed, so a tempo ramp is a slight, steady tape bend and the
+  echoes stay on the grid throughout. Between samples the line is read with a
+  4-point Hermite (`readAt`), not linearly: a half-sample linear read is a
+  low-pass, and round the feedback loop it compounds.
+* **Crossfade** - jumps: any target step over `kJumpSeconds` (3 ms) in one go,
+  or a glide that has fallen more than `kLagSeconds` (20 ms) behind. The old
+  heads stay put, new ones start on the target, and the output fades across
+  over `kFadeSeconds` (30 ms). A new jump during a fade waits for it to finish,
+  then fades to the latest target.
+
+Things that are easy to get wrong here:
+
+* **Taps Feedback writes, as well as reads, at the tap positions.** Tap n's
+  regeneration is added at tap n-1's position. So a gliding head *writes*
+  between samples too - split across the two neighbours (`addAt`) - and during
+  a crossfade both the old and new positions are written, each with its fade
+  weight. Fixing only the reads moves the click into the line, one echo later.
+* **The fade is raised-cosine, not equal-power.** The two heads read the same
+  history a short way apart, so on anything sustained they are correlated and
+  an equal-power fade swells by up to 3 dB (measured: a 0.5 sine peaked at
+  0.705). Raised-cosine gains sum to one and have no corner at either end; the
+  same weights fade the regeneration writes and, through tap 5, the main
+  feedback.
+* **At rest it is the old integer path.** A head that arrives within 0.001
+  sample snaps onto the target; a whole-sample read is a plain `line[index]`,
+  and the integer regeneration write keeps the original expression, so the
+  compiler fuses it the same way. All five reads now come before the writes;
+  that is equivalent because tap n writes on tap n-1's already-read position
+  and the taps are strictly increasing. 21 static renders (free, 16ths, 8ths at
+  44.1 kHz; plain, either feedback path, filter, Filter Taps, HP) hash
+  bit-identical to 2.2.2.0. Note that GCC's default `-ffp-contract=fast` fuses
+  multiply-adds *across* statements and breaks that in the last bit on arm64;
+  clang's default (`on`, Xcode) fuses only within an expression, as does
+  `-ffp-contract=off`, and both are identical.
+* **`reset()` snaps.** After a reset the heads go straight to the next targets,
+  so a fresh line never fades in from the default tap positions.
+* **The DXi's off-by-one wrap is kept** (`indexFor`: `mLength - 1 + pos`), for
+  bit-identity. Each tap skips one sample of the line every 8 seconds; the
+  Hermite neighbours inherit the same mapping.
+
+`tests/DelayLineTests.cpp` checks 14-17: a sine's largest second difference
+through a ramp, a 1 BPM and a 30 BPM step, a fast ramp and a delay grid step is
+the static render's (0.0144) with no swell; a gentle ramp glides with no
+crossfade inside the speed limit, and a step fades for exactly kFadeSeconds
+from the block it arrives in; settled heads give back an impulse as single
+exact samples; and the moving paths never write a subnormal.
+
 ---
 
 ## 5. The interface

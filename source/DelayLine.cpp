@@ -84,6 +84,13 @@ void DelayLine::setSampleRate (int sampleRate)
 	if (sampleRate < 8000)
 		sampleRate = 8000;
 
+	// The read heads' speeds and thresholds are in seconds; see DelayLine.h.
+	const double sr = static_cast<double> (sampleRate);
+	mGlideK      = 1.0 - std::exp (-1.0 / (kGlideSeconds * sr));
+	mJumpSamples = kJumpSeconds * sr;
+	mLagSamples  = kLagSeconds * sr;
+	mFadeInc     = 1.0 / (kFadeSeconds * sr);
+
 	const long newLength = static_cast<long> (sampleRate) * kLineSeconds;
 	if (sampleRate == mSampleRate && newLength == mLength && !mLine.empty ())
 		return;
@@ -108,6 +115,143 @@ void DelayLine::reset ()
 	for (Ladder& l : mLadder)
 		l = Ladder ();
 	mNoisePos = 0;
+	// The line is empty, so there is nothing to glide or fade from: the heads
+	// go straight to wherever the next setDelay() puts them.
+	mSnap        = true;
+	mFading      = false;
+	mJumpPending = false;
+	mFade        = 0.0;
+}
+
+//------------------------------------------------------------------------
+long DelayLine::indexFor (long delay) const
+{
+	// Exactly the DXi's arithmetic, including its wrap to (mLength - 1):
+	// a static render must stay bit-identical.
+	long pos = mAddPos - delay;
+	if (pos < 0)
+		pos = (mLength - 1) + pos;
+	if (pos < 0)                                 // safety net; see notes
+		pos = 0;
+	else if (pos >= mLength)
+		pos = mLength - 1;
+	return pos;
+}
+
+//------------------------------------------------------------------------
+float DelayLine::readAt (double delay) const
+{
+	const double fl = std::floor (delay);
+	const long   i  = static_cast<long> (fl);
+	const double f  = delay - fl;
+	const float* line = mLine.data ();
+
+	if (f == 0.0)
+		return line[indexFor (i)];               // at rest: the integer path
+
+	// 4-point, 3rd-order Hermite between delay i and i + 1. Unlike linear
+	// interpolation it does not dull the top end at a half-sample offset,
+	// which would compound round the feedback loop while a tap moves.
+	const double y0  = line[indexFor (i)];
+	const double ym1 = (i >= 1) ? static_cast<double> (line[indexFor (i - 1)]) : y0;
+	const double y1  = line[indexFor (i + 1)];
+	const double y2  = line[indexFor (i + 2)];
+
+	const double c1 = 0.5 * (y1 - ym1);
+	const double c2 = ym1 - 2.5 * y0 + 2.0 * y1 - 0.5 * y2;
+	const double c3 = 0.5 * (y2 - ym1) + 1.5 * (y0 - y1);
+	return static_cast<float> (((c3 * f + c2) * f + c1) * f + y0);
+}
+
+//------------------------------------------------------------------------
+void DelayLine::addAt (double delay, float amount)
+{
+	const double fl = std::floor (delay);
+	const long   i  = static_cast<long> (fl);
+	const double f  = delay - fl;
+	float* line = mLine.data ();
+
+	const long a = indexFor (i);
+	if (f == 0.0)
+	{
+		line[a] = boundLine (line[a] + amount);
+		return;
+	}
+	const long b = indexFor (i + 1);
+	line[a] = boundLine (line[a] + static_cast<float> ((1.0 - f) * amount));
+	line[b] = boundLine (line[b] + static_cast<float> (f * amount));
+}
+
+//------------------------------------------------------------------------
+void DelayLine::noteNewTargets (const long* oldTargets)
+{
+	long biggest = 0;
+	for (int t = 1; t <= kNumTaps; ++t)
+		biggest = std::max (biggest, std::labs (mTapSamples[t] - oldTargets[t]));
+	if (static_cast<double> (biggest) > mJumpSamples)
+		mJumpPending = true;
+}
+
+//------------------------------------------------------------------------
+void DelayLine::advanceTaps ()
+{
+	if (mSnap)
+	{
+		for (int t = 0; t <= kNumTaps; ++t)
+			mPos[t] = mOldPos[t] = static_cast<double> (mTapSamples[t]);
+		mSnap = mFading = mJumpPending = false;
+		mFade = 0.0;
+		return;
+	}
+
+	if (mFading)
+	{
+		mFade += mFadeInc;
+		if (mFade < 1.0)
+			return;
+		// Faded across: the heads are on the targets the fade started with.
+		// If those have moved on since, carry on below - glide or fade again.
+		mFading = false;
+		mFade   = 0.0;
+	}
+
+	double lag = 0.0;
+	for (int t = 1; t <= kNumTaps; ++t)
+		lag = std::max (lag, std::fabs (static_cast<double> (mTapSamples[t]) - mPos[t]));
+
+	if (lag == 0.0)
+	{
+		mJumpPending = false;                    // jumped and came back
+		return;
+	}
+
+	if (mJumpPending || lag > mLagSamples)
+	{
+		// CROSSFADE: the outgoing heads stay where they are, the incoming
+		// ones start on the targets, and process() fades between them.
+		for (int t = 1; t <= kNumTaps; ++t)
+		{
+			mOldPos[t] = mPos[t];
+			mPos[t]    = static_cast<double> (mTapSamples[t]);
+		}
+		mFading      = true;
+		mFade        = mFadeInc;
+		mJumpPending = false;
+		return;
+	}
+
+	// GLIDE: a one-pole towards the target, speed-limited. A host's tempo
+	// ramp arrives as a small step every block; the one-pole turns that
+	// staircase into a near-constant speed, so the pitch barely moves.
+	for (int t = 1; t <= kNumTaps; ++t)
+	{
+		const double target = static_cast<double> (mTapSamples[t]);
+		const double diff   = target - mPos[t];
+		if (std::fabs (diff) < 1.0e-3)
+			mPos[t] = target;                    // land exactly: the integer path again
+		else
+			mPos[t] += std::clamp (diff * mGlideK, -kGlideMaxRate, kGlideMaxRate);
+	}
 }
 
 //------------------------------------------------------------------------
@@ -119,40 +263,79 @@ void DelayLine::process (float input, float* taps)
 	float* line = mLine.data ();
 	line[mAddPos] = flushTiny (input);         // NaN / overs are caught below
 
-	long removePos    = mAddPos;
-	long oldRemovePos = mAddPos;
+	advanceTaps ();
+
 	float raw[kTapArray] = {};                   // each tap as read, for Filter Taps
 
-	for (int ix = 1; ix <= kNumTaps; ++ix)
+	// All five reads come before any regeneration write. Tap n's write lands
+	// on tap n-1's position, which is already read, and the taps are strictly
+	// increasing - so this is the same arithmetic as the DXi's interleaved
+	// loop, and a static render is bit-identical.
+	if (!mFading)
 	{
-		// Each tap's own delay: n x the per-tap delay free-running (the DXi),
-		// or on the sync grid when synced - see computeTapSamples().
-		removePos = mAddPos - mTapSamples[ix];
-		if (removePos < 0)
-			removePos = (mLength - 1) + removePos;
-		if (removePos < 0)                       // safety net; see notes
-			removePos = 0;
-		else if (removePos >= mLength)
-			removePos = mLength - 1;
-
-		raw[ix]  = line[removePos];
-		taps[ix] = raw[ix] * mTapsOutGain;
+		for (int ix = 1; ix <= kNumTaps; ++ix)
+		{
+			raw[ix]  = readAt (mPos[ix]);
+			taps[ix] = raw[ix] * mTapsOutGain;
+		}
 
 		if (mLoopsFeedback)
 		{
 			// Tap-to-tap regeneration.  Bounded for the same reason as the
 			// main feedback path below - unbounded it grows exponentially.
 			// mTapFeedback is per tap (branch Polivoks); at its default of 1
-			// the product is exactly the DXi's mScale.
-			const float v = line[oldRemovePos] + (mScale * mTapFeedback[ix]) * line[removePos];
-			line[oldRemovePos] = boundLine (v);
-			oldRemovePos = removePos;
+			// the product is exactly the DXi's mScale. While a tap glides,
+			// its write is split across two samples (addAt).
+			for (int ix = 1; ix <= kNumTaps; ++ix)
+			{
+				const double w = mPos[ix - 1];
+				if (w == std::floor (w))
+				{
+					const long at = indexFor (static_cast<long> (w));
+					const float v = line[at] + (mScale * mTapFeedback[ix]) * raw[ix];
+					line[at] = boundLine (v);
+				}
+				else
+					addAt (w, (mScale * mTapFeedback[ix]) * raw[ix]);
+			}
+		}
+	}
+	else
+	{
+		// CROSSFADE, raised-cosine: the two gains always sum to one and have
+		// no corner at either end. Not equal-power - the two heads read the
+		// same history a little apart, so on anything sustained they are
+		// strongly correlated and an equal-power fade swells by up to 3 dB.
+		// The same weights fade the regeneration writes and, through
+		// raw[kNumTaps], the main feedback, so nothing round the loop swells.
+		const double gNew = 0.5 - 0.5 * std::cos (mFade * 3.141592653589793);
+		const double gOld = 1.0 - gNew;
+		float rOld[kTapArray] = {};
+		float rNew[kTapArray] = {};
+
+		for (int ix = 1; ix <= kNumTaps; ++ix)
+		{
+			rOld[ix] = readAt (mOldPos[ix]);
+			rNew[ix] = readAt (mPos[ix]);
+			raw[ix]  = static_cast<float> (gOld * rOld[ix] + gNew * rNew[ix]);
+			taps[ix] = raw[ix] * mTapsOutGain;
+		}
+
+		if (mLoopsFeedback)
+		{
+			for (int ix = 1; ix <= kNumTaps; ++ix)
+			{
+				const double g = static_cast<double> (mScale * mTapFeedback[ix]);
+				addAt (mOldPos[ix - 1], static_cast<float> (gOld * g * rOld[ix]));
+				addAt (mPos[ix - 1],    static_cast<float> (gNew * g * rNew[ix]));
+			}
 		}
 	}
 
 	// The filtered signal is taken from the *last* tap, matching the
-	// original (fEqSample = fLine[nRemovePos] after the loop).
-	double eqSample = static_cast<double> (line[removePos]);
+	// original (fEqSample = fLine[nRemovePos] after the loop) - which no
+	// regeneration write touches, so it is raw[5].
+	double eqSample = static_cast<double> (raw[kNumTaps]);
 
 	if (mUseFilter)
 	{
@@ -246,7 +429,10 @@ float DelayLine::setDelay (float delay)
 	if (mLength <= 0)
 		return 0.f;
 
+	long before[kTapArray];
+	std::copy (mTapSamples, mTapSamples + kTapArray, before);
 	const long last = computeTapSamples (delay, mLength, mSamplesPer32, mTapSamples, &mTempoQuant);
+	noteNewTargets (before);
 	mDelaySamples   = static_cast<int> (std::max (1L, last / kNumTaps));   // the average spacing
 
 	return static_cast<float> (last) / static_cast<float> (mSampleRate);

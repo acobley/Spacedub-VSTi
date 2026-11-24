@@ -116,8 +116,31 @@ public:
 	long  getLength () const      { return mLength; }
 	int   getTempoQuant () const  { return mTempoQuant; }
 	int   getDelaySamples () const{ return mDelaySamples; }
-	/** Where tap `tap` (1..kNumTaps) reads from, in samples. */
+	/** Where tap `tap` (1..kNumTaps) is headed, in samples: the target the
+	    glide or crossfade below is moving towards, and where it rests. */
 	long  getTapSamples (int tap) const { return (tap >= 1 && tap <= kNumTaps) ? mTapSamples[tap] : 0; }
+	/** Where tap `tap` is actually reading this sample (fractional while it
+	    glides; during a crossfade, the position being faded in). */
+	double getTapPosition (int tap) const { return (tap >= 1 && tap <= kNumTaps) ? mPos[tap] : 0.0; }
+	bool  isCrossfading () const  { return mFading; }
+
+	// -- moving the taps without clicks (branch tempo-glide) ---------------
+	// The targets in mTapSamples jump whenever the tempo, the sync rate or
+	// the delay control changes. The read heads follow them in one of two
+	// ways - see advanceTaps():
+	//   GLIDE      small moves (a host tempo ramp, a slow free-running knob):
+	//              the heads slide, read between samples (4-point Hermite),
+	//              like tape. Speed-limited, so the pitch bend stays small.
+	//   CROSSFADE  jumps (a tempo step, a grid step, a sync rate change): a
+	//              second set of heads starts at the new place and the output
+	//              fades across, equal-power, over kFadeSeconds.
+	// At rest every head is on a whole sample and the arithmetic is exactly
+	// the integer path it always was, so a static render is bit-identical.
+	static constexpr double kGlideSeconds = 0.050;   // one-pole time constant
+	static constexpr double kGlideMaxRate = 0.03;    // samples per sample: ~half a semitone
+	static constexpr double kJumpSeconds  = 0.003;   // a target step bigger than this fades
+	static constexpr double kLagSeconds   = 0.020;   // a glide this far behind fades instead
+	static constexpr double kFadeSeconds  = 0.030;
 
 private:
 	void  buildNoiseTable ();
@@ -132,6 +155,20 @@ private:
 	    low-pass output, or with mHighPass its high-pass mix. */
 	double runLadder (Ladder& s, double x) const;
 
+	/** The line index `delay` whole samples back from the write position,
+	    with the DXi's wrap (mLength - 1) kept so a static render is
+	    bit-identical. */
+	long   indexFor (long delay) const;
+	/** Read `delay` samples back; exact on a whole sample, Hermite between. */
+	float  readAt (double delay) const;
+	/** Add `amount` at `delay` samples back, split between the two
+	    neighbouring samples when it is not on a whole one. */
+	void   addAt (double delay, float amount);
+	/** Move the read heads one sample towards mTapSamples. */
+	void   advanceTaps ();
+	/** Compare new targets with the old ones; a jump arms a crossfade. */
+	void   noteNewTargets (const long* oldTargets);
+
 	std::vector<float> mLine;
 	long   mLength      = 0;
 	long   mAddPos      = 0;
@@ -141,6 +178,19 @@ private:
 	/** Each tap's delay in samples, [1..kNumTaps]; set by setDelay() from
 	    computeTapSamples(). */
 	long   mTapSamples[kTapArray] = { 0, 1, 2, 3, 4, 5 };
+
+	// Read-head state (see advanceTaps). mPos is where each tap reads; during
+	// a crossfade it is the incoming position and mOldPos the outgoing one.
+	double mPos[kTapArray]    = { 0, 1, 2, 3, 4, 5 };
+	double mOldPos[kTapArray] = { 0, 1, 2, 3, 4, 5 };
+	double mFade        = 0.0;     // 0..1 through a crossfade
+	bool   mFading      = false;
+	bool   mJumpPending = false;
+	bool   mSnap        = true;    // after reset: heads go straight to the targets
+	double mGlideK      = 0.0;
+	double mJumpSamples = 0.0;
+	double mLagSamples  = 0.0;
+	double mFadeInc     = 0.0;
 
 	float  mScale             = 0.5f;
 	float  mTapFeedback[kTapArray] = { 1.f, 1.f, 1.f, 1.f, 1.f, 1.f };

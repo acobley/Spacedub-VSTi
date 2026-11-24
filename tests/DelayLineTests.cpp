@@ -32,6 +32,16 @@
 //   12.  ScopedFlushDenormals: flush-to-zero inside, the old mode after.
 //   13.  Output gains ramped: Feedback Out and Taps Gain moved across a
 //        block, the way processAudio now does it, leave no step.
+//   14.  Tempo moves without clicks (branch tempo-glide): a host ramp, a
+//        small and a big tempo step and a grid step of the delay control,
+//        on a sine - no sample-to-sample kink above the static render's,
+//        and no swell.
+//   15.  Small moves glide and jumps crossfade; the glide stays under its
+//        speed limit; a crossfade lasts kFadeSeconds.
+//   16.  Once a move settles the heads are on whole samples again: an
+//        impulse comes back as single, unsmeared samples on the targets.
+//   17.  Denormals: the gliding and crossfading paths, with both feedback
+//        paths on, never write a subnormal either.
 //------------------------------------------------------------------------
 
 #include "DelayLine.h"
@@ -436,6 +446,158 @@ int main () {
             chk(stepped > 0.9f * level, "the old step did not jump (test is meaningless)");
             chk(ramped < 1.5f * level / block + 1e-4f, "the ramped gain still steps");
         }
+    }
+
+    // The tempo-glide checks drive a line the way processAudio does: the sync
+    // grid set once per block from the tempo, setDelay and process per sample.
+    const int gsr = 48000, gblock = 512;
+    auto tempoRun = [&](DelayLine& d, int div, long n, auto tempoAt, auto delayAt,
+                        auto inputAt, auto perSample) {
+        float taps[DelayLine::kTapArray] = {};
+        for (long i = 0; i < n; ++i) {
+            if (i % gblock == 0)
+                d.setSamplesPer32(samplesPer32For(div, tempoAt(i), gsr));
+            d.setDelay((float) delayAt(i));
+            d.process(inputAt(i), taps);
+            perSample(i, taps);
+        }
+    };
+    auto sine = [&](long i) { return 0.5f * (float) std::sin(2.0 * 3.141592653589793 * 220.0 * i / gsr); };
+
+    // 14. A sine through the line is a sine on every tap, so its second
+    //     difference is bounded by A (2 pi f / sr)^2 - unless a tap jumps.
+    //     Before this branch a tempo step put a spike of 0.45 on a 0.5 sine.
+    std::printf("14. tempo moves without clicks\n");
+    {
+        struct Case { const char* name; double (*tempo)(long); float (*delay)(long); };
+        static const Case cases[] = {
+            { "static",                 [](long) { return 120.0; }, [](long) { return 0.35f; } },
+            { "ramp 120-140 / 4 bars",  [](long i) { return 120.0 + 20.0 * std::clamp((i - 3.0 * 48000) / (8.0 * 48000), 0.0, 1.0); }, [](long) { return 0.35f; } },
+            { "ramp 120-170 / 2 s",     [](long i) { return 120.0 + 50.0 * std::clamp((i - 3.0 * 48000) / (2.0 * 48000), 0.0, 1.0); }, [](long) { return 0.35f; } },
+            { "step 120 -> 121",        [](long i) { return i < 4 * 48000 ? 120.0 : 121.0; }, [](long) { return 0.35f; } },
+            { "step 120 -> 90",         [](long i) { return i < 4 * 48000 ? 120.0 : 90.0; },  [](long) { return 0.35f; } },
+            { "delay grid step",        [](long) { return 120.0; }, [](long i) { return i < 4 * 48000 ? 0.35f : 0.43f; } },
+        };
+        double baseline = 0.0;
+        for (const Case& c : cases) {
+            DelayLine d; d.setSampleRate(gsr);
+            double prev[DelayLine::kTapArray][2] = {}, kink = 0.0, peak = 0.0;
+            long moved = 0;
+            tempoRun(d, 16, 12L * gsr, c.tempo, c.delay, sine, [&](long i, const float* t) {
+                for (int k = 1; k <= DelayLine::kNumTaps; ++k) {
+                    if (i > 2L * gsr) {          // every tap has signal by now
+                        kink = std::max(kink, std::fabs(t[k] - 2.0 * prev[k][0] + prev[k][1]));
+                        peak = std::max(peak, (double) std::fabs(t[k]));
+                    }
+                    prev[k][1] = prev[k][0]; prev[k][0] = t[k];
+                }
+                if (i == 2L * gsr) moved = d.getTapSamples(DelayLine::kNumTaps);   // before any move
+            });
+            const long end = d.getTapSamples(DelayLine::kNumTaps);
+            if (baseline == 0.0) baseline = kink;
+            std::printf("   %-22s tap 5 %6ld -> %6ld  kink %.5f (static %.5f)  peak %.4f\n",
+                        c.name, moved, end, kink, baseline, peak);
+            if (&c != &cases[0])
+                chk(end != moved, "the targets did not move (test is meaningless)");
+            chk(kink <= 1.05 * baseline, "a tap still jumps when the tempo or the delay moves");
+            chk(peak <= 0.5001, "the move swells the level");
+            chk(!d.isCrossfading() && d.getTapPosition(DelayLine::kNumTaps) == (double) end,
+                "the heads did not settle on the targets");
+        }
+    }
+
+    // 15. Which way the heads move, and how fast. A gentle ramp on a short
+    //     synced delay must glide all the way - no crossfade - with no head
+    //     moving faster than kGlideMaxRate; a tempo step must crossfade, for
+    //     kFadeSeconds.
+    std::printf("15. glide for ramps, crossfade for jumps\n");
+    {
+        DelayLine d; d.setSampleRate(gsr);
+        long fades = 0; double fastest = 0.0, last[DelayLine::kTapArray] = {};
+        tempoRun(d, 16, 12L * gsr,
+                 [](long i) { return 120.0 + 20.0 * std::clamp((i - 2.0 * 48000) / (8.0 * 48000), 0.0, 1.0); },
+                 [](long) { return 0.05f; }, sine, [&](long i, const float*) {
+            fades += d.isCrossfading() ? 1 : 0;
+            for (int k = 1; k <= DelayLine::kNumTaps; ++k) {
+                if (i > 0) fastest = std::max(fastest, std::fabs(d.getTapPosition(k) - last[k]));
+                last[k] = d.getTapPosition(k);
+            }
+        });
+        std::printf("   ramp: %ld crossfading samples, fastest head %.4f samples/sample (limit %.2f)\n",
+                    fades, fastest, DelayLine::kGlideMaxRate);
+        chk(fades == 0, "a gentle tempo ramp crossfaded instead of gliding");
+        chk(fastest > 0.0 && fastest <= DelayLine::kGlideMaxRate + 1e-12, "a gliding head broke its speed limit");
+
+        DelayLine e; e.setSampleRate(gsr);
+        long first = -1, lastFade = -1;
+        tempoRun(e, 16, 3L * gsr, [](long i) { return i < 48000 ? 120.0 : 90.0; },
+                 [](long) { return 0.05f; }, sine, [&](long i, const float*) {
+            if (e.isCrossfading()) { if (first < 0) first = i; lastFade = i; }
+        });
+        const long len = lastFade - first + 1, want = std::lround(DelayLine::kFadeSeconds * gsr);
+        std::printf("   step: crossfade from sample %ld for %ld samples (want %ld)\n", first, len, want);
+        const long blockStart = ((gsr + gblock - 1) / gblock) * gblock;    // the first block at 90
+        chk(first == blockStart, "a tempo step did not start a crossfade on the block it arrived in");
+        chk(std::labs(len - want) <= 1, "the crossfade is not kFadeSeconds long");
+    }
+
+    // 16. Once settled, nothing is interpolated: after a tempo ramp the line
+    //     is cleared and an impulse sent through - each tap must give back one
+    //     sample of exactly 1.0 at exactly its target, and nothing else.
+    std::printf("16. settled heads read whole samples\n");
+    {
+        DelayLine d; d.setSampleRate(gsr);
+        const long settle = 12L * gsr;
+        tempoRun(d, 16, settle,
+                 [](long i) { return 120.0 + 7.0 * std::clamp((i - 1.0 * 48000) / (4.0 * 48000), 0.0, 1.0); },
+                 [](long) { return 0.05f; }, sine, [](long, const float*) {});
+        // Clear the line but keep the heads where they settled: reset() would
+        // snap them anyway, so silence flushes it instead.
+        tempoRun(d, 16, 9L * gsr, [](long) { return 127.0; }, [](long) { return 0.05f; },
+                 [](long) { return 0.f; }, [](long, const float*) {});
+        long hits[DelayLine::kTapArray] = {}, strays = 0; bool exact = true;
+        tempoRun(d, 16, (long) d.getTapSamples(DelayLine::kNumTaps) + 10, [](long) { return 127.0; },
+                 [](long) { return 0.05f; }, [](long i) { return i == 0 ? 1.f : 0.f; },
+                 [&](long i, const float* t) {
+            for (int k = 1; k <= DelayLine::kNumTaps; ++k) {
+                if (t[k] == 0.f) continue;
+                if (i == d.getTapSamples(k)) { ++hits[k]; exact = exact && t[k] == 1.f; }
+                else ++strays;
+            }
+        });
+        bool all = true;
+        for (int k = 1; k <= DelayLine::kNumTaps; ++k) all = all && hits[k] == 1;
+        std::printf("   taps at %ld %ld %ld %ld %ld: %s, %ld stray samples\n",
+                    d.getTapSamples(1), d.getTapSamples(2), d.getTapSamples(3), d.getTapSamples(4),
+                    d.getTapSamples(5), all && exact ? "one exact sample each" : "SMEARED", strays);
+        chk(all && exact && strays == 0, "a settled head still interpolates");
+    }
+
+    // 17. Check 11's floor, on the moving paths: a burst, then silence while
+    //     the tempo ramps (glide) and steps (crossfade), both feedback paths
+    //     on, filter off - no subnormal on any tap, and the tail reaches zero.
+    std::printf("17. no denormals while the heads move\n");
+    {
+        DelayLine d; d.setSampleRate(gsr);
+        d.setLoopsFeedback(true); d.setMainFeedback(true);
+        d.setScale(0.1f); d.setMainFeedbackValue(0.5f);     // check 11's "both feedback paths"
+        long subnormal = 0; float lastTap = 1.f;
+        // ramp for 10 s, step every 2 s until 30 s, then hold while it dies
+        // (about 160 s at these settings, moving or not)
+        tempoRun(d, 16, 180L * gsr,
+                 [](long i) { const double s = i / 48000.0;
+                              return s < 10 ? 120.0 + 2.0 * s
+                                   : s < 30 ? (std::fmod(s, 4.0) < 2.0 ? 100.0 : 150.0) : 120.0; },
+                 [](long) { return 0.05f; },
+                 [](long i) { return i < 4800 ? 0.5f * (float) std::sin(i * 0.05) : 0.f; },
+                 [&](long, const float* t) {
+            for (int k = 1; k <= DelayLine::kNumTaps; ++k)
+                if (t[k] != 0.f && std::fpclassify(t[k]) == FP_SUBNORMAL) ++subnormal;
+            lastTap = std::fabs(t[DelayLine::kNumTaps]);
+        });
+        std::printf("   %ld subnormal tap samples, last tap 5 %g\n", subnormal, lastTap);
+        chk(subnormal == 0, "a moving head produced a subnormal");
+        chk(lastTap == 0.f, "the tail did not reach exactly zero");
     }
 
     std::printf(fails ? "\n%d CHECK(S) FAILED\n" : "\nall checks passed\n", fails);
