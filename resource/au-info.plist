@@ -36,9 +36,9 @@
 	<key>CFBundleSignature</key>
 	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>2.2.2</string>
+	<string>2.3.0</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.2.2</string>
+	<string>2.3.0</string>
 
 	<key>AudioComponents</key>
 	<array>
@@ -55,15 +55,15 @@
 			<string>SDub</string>
 			<key>type</key>
 			<string>aufx</string>
-			<!-- 0x00020202 == 2.2.2 -->
+			<!-- 0x00020300 == 2.3.0 -->
 			<key>version</key>
-			<integer>131586</integer>
+			<integer>131840</integer>
 		</dict>
 	</array>
 
 	<!-- Read by the wrapper with sscanf("%x"), so this one is a hex string. -->
 	<key>AudioUnit Version</key>
-	<string>00020202</string>
+	<string>00020300</string>
 
 	<!-- Matches SpaceDubProcessor::setBusArrangements: stereo in / stereo out,
 	     or mono in / mono out. Nothing else is accepted. -->
