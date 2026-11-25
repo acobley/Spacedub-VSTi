@@ -477,7 +477,16 @@ void SpaceDubProcessor::sendSampleRateToController ()
 	if (IPtr<IMessage> message = owned (allocateMessage ()))
 	{
 		message->setMessageID (kSpaceDubSampleRateMessage);
-		message->getAttributes ()->setFloat (kSpaceDubSampleRateAttribute, mSampleRate);
+		auto* attrs = message->getAttributes ();
+		attrs->setFloat (kSpaceDubSampleRateAttribute, mSampleRate);
+		// The rest of how we are being run, for the About box. setActive comes
+		// after setupProcessing and setBusArrangements, so all of it is current.
+		SpeakerArrangement out = SpeakerArr::kStereo;
+		getBusArrangement (kOutput, 0, out);
+		attrs->setInt (kSpaceDubMaxBlockAttribute, processSetup.maxSamplesPerBlock);
+		attrs->setInt (kSpaceDubSampleBitsAttribute, processSetup.symbolicSampleSize == kSample64 ? 64 : 32);
+		attrs->setInt (kSpaceDubProcessModeAttribute, processSetup.processMode);
+		attrs->setInt (kSpaceDubChannelsAttribute, SpeakerArr::getChannelCount (out));
 		sendMessage (message);
 	}
 }

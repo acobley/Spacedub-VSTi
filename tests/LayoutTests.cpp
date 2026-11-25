@@ -19,8 +19,13 @@
 //   6. The wear stays on the panel, off the glass, and faint enough.
 //   7. The tap meters' scale (SpaceDubParams.h), which the processor
 //      writes and the tap scope reads.
+//   8. The About box (AboutInfo.h): with worst-case content every row fits,
+//      a long path wraps at '/' and keeps its end, the bundle is found from
+//      the binary for VST3 and AU, and the wordmark's button touches no
+//      control.
 //------------------------------------------------------------------------
 
+#include "AboutInfo.h"
 #include "PanelWear.h"
 #include "SpaceDubLayout.h"
 
@@ -235,6 +240,91 @@ int main ()
 	for (int ch = 0; ch < 2; ++ch)
 		for (int tap = 1; tap <= 5; ++tap)
 			chk (isTapFeedback (tapFeedbackId (ch, tap)), "a tap feedback id is out of range");
+
+	// ---- 8. the About box ---------------------------------------------------------
+	std::printf ("8. the About box\n");
+	{
+		using namespace About;
+		const std::string dev = "/Users/andy/DXi-DEv/Spacedub-VSTi/build/VST3/Release/SpaceDub.vst3";
+		chk (bundlePath (dev + "/Contents/MacOS/SpaceDub") == dev, "the VST3 bundle is not found from its binary");
+		chk (bundlePath ("/Library/Audio/Plug-Ins/Components/SpaceDub.component/Contents/Resources/"
+		                 "plugin.vst3/Contents/MacOS/SpaceDub") == "/Library/Audio/Plug-Ins/Components/SpaceDub.component",
+		     "under the AU wrapper the .component is not what is named");
+		chk (bundlePath ("C:\\Program Files\\Common Files\\VST3\\x.dll") ==
+		         "C:\\Program Files\\Common Files\\VST3\\x.dll", "a path with no bundle is not left whole");
+		chk (rateText (44100) == "44.1 kHz" && rateText (48000) == "48 kHz" && rateText (88200) == "88.2 kHz",
+		     "sample rates are not written as kHz");
+		chk (bpmText (120) == "120" && bpmText (92.5) == "92.5" && bpmText (128.126) == "128.13",
+		     "tempi are not written plainly");
+
+		// a path that fits comes back whole; one that does not wraps after '/'
+		auto joined = [] (const std::vector<std::string>& v) { std::string j; for (auto& l : v) j += l; return j; };
+		const auto wrapped = wrapPath (dev, Layout::kAboutValueW, 3);
+		chk (joined (wrapped) == dev, "a wrapped path does not read back whole");
+		chk (wrapped.size () >= 2, "the development path should need two lines (test is meaningless)");
+		for (size_t i = 0; i + 1 < wrapped.size (); ++i)
+			chk (wrapped[i].back () == '/', "a path line does not break after a '/'");
+		std::string deep = "/Volumes/Projects";
+		for (int i = 0; i < 20; ++i)
+			deep += "/a-very-long-folder-name-" + std::to_string (i);
+		deep += "/SpaceDub.vst3";
+		const auto cut = wrapPath (deep, Layout::kAboutValueW, Layout::kAboutPathLines);
+		chk (static_cast<int> (cut.size ()) == Layout::kAboutPathLines, "a very long path is not cut to its lines");
+		chk (cut.front ().rfind ("...", 0) == 0, "a cut path does not start with ...");
+		chk (cut.back ().size () >= 13 && cut.back ().compare (cut.back ().size () - 13, 13, "SpaceDub.vst3") == 0,
+		     "a cut path loses its end");
+
+		// worst case: every row as long as it can reasonably get
+		Info info;
+		info.version = "22.22.222.2222";
+		info.commit = "abcdef0"; info.branch = "feature/a-rather-long-branch"; info.dirty = true;
+		info.audio = { true, 192000.0, 8192, 64, 2, 2 };
+		info.hostName = "Steinberg Cubase Pro 14.0.30";
+		info.processName = "Cubase 14";
+		info.binaryPath = deep + "/Contents/MacOS/SpaceDub";
+		info.hostTempo = 128.125;
+		const auto rs = rows (info);
+		chk (rs.size () == 9, "the About box does not have its nine rows");
+		const double labelRoom = Layout::kAboutValueX - Layout::kAboutLabelX - 10.0;
+		double widest = 0.0;
+		for (const auto& r : rs)
+		{
+			chk (Lettering::width (r.label, Layout::kTextAboutLabel) <= labelRoom, "About label too wide: " + r.label);
+			for (const auto& l : r.lines)
+			{
+				widest = std::max (widest, textWidth (l));
+				chk (textWidth (l) <= Layout::kAboutValueW, "About value too wide: " + l);
+			}
+		}
+		const double lastY = rowCentreY (rs, rs.size () - 1) +
+		                     Layout::kAboutLineGap * static_cast<double> (rs.back ().lines.size () - 1);
+		chk (lastY + 10.0 < Layout::kAboutFooterY - 16.0, "the About rows run into the footer");
+		const double boxW = Layout::kAboutBox.width () - 48.0;
+		chk (textWidth ("STEREO MULTI-TAP DELAY WITH LADDER FILTER") <= boxW, "the About tagline does not fit");
+		chk (Lettering::width ("CLICK ANYWHERE OR PRESS ESC TO CLOSE", kTextScreenSm) <= boxW, "the About footer does not fit");
+		std::printf ("   widest value %.0f of %.0f px; last row at %.0f, footer rule at %.0f\n",
+		             widest, Layout::kAboutValueW, lastY, Layout::kAboutFooterY - 16.0);
+
+		// the Audio Unit wrapper, in and out of process; not yet running
+		Info au = info;
+		au.hostName = kAUWrapperHostName; au.processName = "Logic Pro";
+		au.binaryPath = "/Library/Audio/Plug-Ins/Components/SpaceDub.component/Contents/Resources/plugin.vst3/Contents/MacOS/SpaceDub";
+		au.audio.known = false;
+		const auto ra = rows (au);
+		chk (ra[2].lines[0].find ("Audio Unit") != std::string::npos, "the AU wrapper is not reported as an Audio Unit");
+		chk (ra[3].lines[0] == "Logic Pro", "under the AU wrapper the host is not the application");
+		chk (ra[4].lines[0] == "not running yet" && ra.size () == 8, "an unstarted engine is not reported plainly");
+		au.processName = "AUHostingServiceXPC_arrowhead";
+		chk (rows (au)[3].lines[0] == "out-of-process Audio Unit service", "an out-of-process AU host is not named");
+
+		// the wordmark's button sits on no control
+		for (const auto& c : kControls)
+		{
+			const Rect r = controlRect (c);
+			chk (r.right <= kWordmark.left || r.left >= kWordmark.right || r.bottom <= kWordmark.top ||
+			         r.top >= kWordmark.bottom, "a control sits under the wordmark's button");
+		}
+	}
 
 	if (fails)
 	{

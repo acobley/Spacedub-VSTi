@@ -1374,5 +1374,137 @@ void TextLine::draw (CDrawContext* context)
 }
 
 //------------------------------------------------------------------------
+// LogoButton
+//------------------------------------------------------------------------
+LogoButton::LogoButton (const CRect& size, std::function<void ()> onClick)
+: CView (size)
+, mOnClick (std::move (onClick))
+{
+	setMouseEnabled (true);
+	setTransparency (true);
+}
+
+void LogoButton::draw (CDrawContext*)
+{
+	setDirty (false);                         // the Backdrop paints the wordmark
+}
+
+void LogoButton::onMouseEnterEvent (MouseEnterEvent& event)
+{
+	if (auto* frame = getFrame ())
+		frame->setCursor (kCursorHand);
+	event.consumed = true;
+}
+
+void LogoButton::onMouseExitEvent (MouseExitEvent& event)
+{
+	if (auto* frame = getFrame ())
+		frame->setCursor (kCursorDefault);
+	event.consumed = true;
+}
+
+void LogoButton::onMouseDownEvent (MouseDownEvent& event)
+{
+	if (event.buttonState.isLeft ())
+	{
+		if (auto* frame = getFrame ())
+			frame->setCursor (kCursorDefault);   // the box covers us now
+		if (mOnClick)
+			mOnClick ();
+	}
+	event.consumed = true;
+}
+
+void LogoButton::onMouseUpEvent (MouseUpEvent& event)
+{
+	event.consumed = true;
+}
+
+//------------------------------------------------------------------------
+// AboutBox
+//------------------------------------------------------------------------
+AboutBox::AboutBox (const CRect& size, std::function<void ()> onClose)
+: CView (size)
+, mOnClose (std::move (onClose))
+{
+	setMouseEnabled (true);
+	setTransparency (true);
+}
+
+void AboutBox::setRows (std::vector<About::Row> rows)
+{
+	mRows = std::move (rows);
+	invalid ();
+}
+
+void AboutBox::draw (CDrawContext* context)
+{
+	using namespace Layout;
+	context->setDrawMode (kAntiAliasing | kNonIntegralMode);
+
+	// the panel, dimmed
+	context->setFillColor (CColor (0, 0, 0, 178));
+	context->drawRect (getViewSize (), kDrawFilled);
+
+	// the box: a section, with a header band like the panel's own
+	const CRect box (kAboutBox.left, kAboutBox.top, kAboutBox.right, kAboutBox.bottom);
+	roundRect (context, box, kSectionRadius, &Palette::kSection, &Palette::kSectionEdge, 1.2);
+	{
+		CRect band (box.left + 1.2, box.top + 1.2, box.right - 1.2, box.top + 62.0);
+		context->setFillColor (Palette::kHeader);
+		context->drawRect (band, kDrawFilled);
+		context->setFillColor (Palette::kHeaderRule);
+		context->drawRect (CRect (band.left, band.bottom, band.right, band.bottom + 2.0), kDrawFilled);
+	}
+
+	// the wordmark, centred, drawn exactly as the header draws it
+	{
+		const double gap = 12.0;
+		const double w = Lettering::width ("SPACE", kTextWordmark) + gap + Lettering::width ("DUB", kTextWordmark);
+		const double left = (box.left + box.right) / 2.0 - w / 2.0;
+		const double second = left + Lettering::width ("SPACE", kTextWordmark) + gap;
+		for (int pass = 0; pass < 2; ++pass)
+		{
+			const double stroke = pass ? 0.32 : -1.0;
+			drawLettering (context, "SPACE", kTextWordmark, pass ? Palette::kHeader : Palette::kInk, left,
+			               kAboutWordmarkY, Align::Left, stroke);
+			drawLettering (context, "DUB", kTextWordmark, pass ? Palette::kHeader : Palette::kRed, second,
+			               kAboutWordmarkY, Align::Left, stroke);
+		}
+	}
+	drawLettering (context, "STEREO MULTI-TAP DELAY WITH LADDER FILTER", kTextAboutValue, Palette::kInkSoft,
+	               (box.left + box.right) / 2.0, kAboutTaglineY, Align::Centre);
+
+	// the rows
+	for (size_t i = 0; i < mRows.size (); ++i)
+	{
+		const double y = About::rowCentreY (mRows, i);
+		drawLettering (context, mRows[i].label, kTextAboutLabel, Palette::kInkDim, kAboutLabelX, y);
+		for (size_t l = 0; l < mRows[i].lines.size (); ++l)
+			drawLettering (context, mRows[i].lines[l], kTextAboutValue, Palette::kInk, kAboutValueX,
+			               y + kAboutLineGap * static_cast<double> (l));
+	}
+
+	// the way out
+	context->setFillColor (Palette::kRule);
+	context->drawRect (CRect (box.left + 24.0, kAboutFooterY - 16.0, box.right - 24.0, kAboutFooterY - 15.0),
+	                   kDrawFilled);
+	drawLettering (context, "CLICK ANYWHERE OR PRESS ESC TO CLOSE", kTextScreenSm, Palette::kInkDim,
+	               (box.left + box.right) / 2.0, kAboutFooterY, Align::Centre);
+	setDirty (false);
+}
+
+void AboutBox::onMouseDownEvent (MouseDownEvent& event)
+{
+	event.consumed = true;
+	if (mOnClose)
+		mOnClose ();
+}
+
+void AboutBox::onMouseUpEvent (MouseUpEvent& event)     { event.consumed = true; }
+void AboutBox::onMouseMoveEvent (MouseMoveEvent& event) { event.consumed = true; }
+void AboutBox::onMouseWheelEvent (MouseWheelEvent& event) { event.consumed = true; }
+
+//------------------------------------------------------------------------
 } // namespace Panel
 } // namespace SpaceDub

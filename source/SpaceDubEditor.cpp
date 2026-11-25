@@ -4,10 +4,30 @@
 
 #include "SpaceDubEditor.h"
 #include "SpaceDubController.h"
+#include "version.h"
+
+// The commit this was built from - generated on every build by
+// cmake/SpaceDubGitVersion.cmake. Absent (a build outside CMake), the About
+// box says "not built from git".
+#if __has_include("SpaceDubGitVersion.h")
+#include "SpaceDubGitVersion.h"
+#endif
+#ifndef SPACEDUB_GIT_COMMIT
+#define SPACEDUB_GIT_COMMIT ""
+#define SPACEDUB_GIT_BRANCH ""
+#define SPACEDUB_GIT_DIRTY  0
+#endif
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+
+#if SMTG_OS_WINDOWS
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <stdlib.h>
+#endif
 
 using namespace VSTGUI;
 using namespace Steinberg;
@@ -20,6 +40,58 @@ namespace {
 CRect toCRect (const Layout::Rect& r)
 {
 	return CRect (r.left, r.top, r.right, r.bottom);
+}
+
+#if SMTG_OS_WINDOWS
+std::string narrow (const wchar_t* w)
+{
+	const int n = WideCharToMultiByte (CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+	if (n <= 1)
+		return {};
+	std::string s (static_cast<size_t> (n - 1), '\0');
+	WideCharToMultiByte (CP_UTF8, 0, w, -1, s.data (), n, nullptr, nullptr);
+	return s;
+}
+#endif
+
+/** The file our own code was loaded from: ask the loader which binary holds
+    this very function. (The AU wrapper's .component holds the VST3 inside
+    it - AboutInfo.h's bundlePath() sorts out which bundle to name.) */
+std::string moduleBinaryPath ()
+{
+#if SMTG_OS_WINDOWS
+	HMODULE module = nullptr;
+	if (!GetModuleHandleExW (GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+	                         reinterpret_cast<LPCWSTR> (&moduleBinaryPath), &module))
+		return {};
+	wchar_t buf[4096] = {};
+	return GetModuleFileNameW (module, buf, 4096) ? narrow (buf) : std::string ();
+#else
+	Dl_info info = {};
+	if (dladdr (reinterpret_cast<const void*> (&moduleBinaryPath), &info) && info.dli_fname)
+		return info.dli_fname;
+	return {};
+#endif
+}
+
+/** The application we are running in. */
+std::string processName ()
+{
+#if SMTG_OS_WINDOWS
+	wchar_t buf[4096] = {};
+	if (!GetModuleFileNameW (nullptr, buf, 4096))
+		return {};
+	std::string s = narrow (buf);
+	const auto slash = s.find_last_of ("\\/");
+	s = (slash == std::string::npos) ? s : s.substr (slash + 1);
+	const auto dot = s.rfind ('.');
+	return dot == std::string::npos ? s : s.substr (0, dot);
+#elif SMTG_OS_MACOS
+	const char* name = getprogname ();
+	return name ? name : "";
+#else
+	return {};
+#endif
 }
 
 } // anonymous namespace
@@ -244,9 +316,20 @@ bool PLUGIN_API SpaceDubEditor::open (void* parent, const PlatformType& platform
 	mStatusPill = new Panel::StatusPill (toCRect (Layout::kStatusPill));
 	frame->addView (mStatusPill);
 
+	// ---- the wordmark opens the About box ---------------------------------
+	mLogo = new Panel::LogoButton (toCRect (Layout::kWordmark), [this] () { openAbout (); });
+	frame->addView (mLogo);
+
 	// ---- the controls -----------------------------------------------------
 	for (const auto& c : Layout::kControls)
 		addControl (c);
+
+	// ---- the About box: last, so it is on top of everything; hidden --------
+	mAbout = new Panel::AboutBox (frameSize, [this] () { closeAbout (); });
+	mAbout->setVisible (false);
+	frame->addView (mAbout);
+	mEscapeHook.editor = this;
+	frame->registerKeyboardHook (&mEscapeHook);
 
 	refreshAllReadouts ();
 	return true;
@@ -266,9 +349,12 @@ void PLUGIN_API SpaceDubEditor::close ()
 	mTempoScreen = nullptr;
 	mStatusPill = nullptr;
 	mEngineLine = nullptr;
+	mLogo = nullptr;
+	mAbout = nullptr;
 
 	if (frame)
 	{
+		frame->unregisterKeyboardHook (&mEscapeHook);
 		frame->forget ();
 		frame = nullptr;
 	}
@@ -585,6 +671,70 @@ void SpaceDubEditor::refreshAllReadouts ()
 	refreshTapScope ();
 	refreshTempoScreen ();
 	refreshHeader ();
+	if (isAboutOpen ())
+		refreshAbout ();                         // the audio settings or tempo moved
+}
+
+//------------------------------------------------------------------------
+// The About box
+//------------------------------------------------------------------------
+About::Info SpaceDubEditor::aboutInfo () const
+{
+	About::Info info;
+	info.version     = FULL_VERSION_STR;
+	info.commit      = SPACEDUB_GIT_COMMIT;
+	info.branch      = SPACEDUB_GIT_BRANCH;
+	info.dirty       = SPACEDUB_GIT_DIRTY != 0;
+	info.binaryPath  = moduleBinaryPath ();
+	info.processName = processName ();
+	if (mController)
+	{
+		info.audio     = mController->getAudioSettings ();
+		info.hostName  = mController->getHostName ();
+		info.hostTempo = mController->getHostTempo ();
+	}
+	info.manualTempo = runningTempo ();
+	return info;
+}
+
+bool SpaceDubEditor::isAboutOpen () const
+{
+	return mAbout != nullptr && mAbout->isVisible ();
+}
+
+void SpaceDubEditor::refreshAbout ()
+{
+	if (mAbout)
+		mAbout->setRows (About::rows (aboutInfo ()));
+}
+
+void SpaceDubEditor::openAbout ()
+{
+	if (!mAbout || isAboutOpen ())
+		return;
+	refreshAbout ();
+	mAbout->setVisible (true);
+	mAbout->invalid ();
+}
+
+void SpaceDubEditor::closeAbout ()
+{
+	// Called from the box's own mouse handler: hide it, never remove it.
+	if (!isAboutOpen ())
+		return;
+	mAbout->setVisible (false);
+	if (frame)
+		frame->invalid ();
+}
+
+void SpaceDubEditor::EscapeHook::onKeyboardEvent (KeyboardEvent& event, CFrame*)
+{
+	if (editor && editor->isAboutOpen () && event.type == EventType::KeyDown &&
+	    event.virt == VirtualKey::Escape)
+	{
+		editor->closeAbout ();
+		event.consumed = true;
+	}
 }
 
 //------------------------------------------------------------------------

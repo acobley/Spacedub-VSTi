@@ -19,5 +19,10 @@ static const Steinberg::FUID kSpaceDubControllerUID (0x7D3DF2D0, 0x2F20420A, 0x9
     parameter instead, because it changes during processing. */
 static const char* const kSpaceDubSampleRateMessage   = "SpaceDubSampleRate";
 static const char* const kSpaceDubSampleRateAttribute = "sampleRate";
+// Sent in the same message, for the About box: how the host is running us.
+static const char* const kSpaceDubMaxBlockAttribute    = "maxBlock";
+static const char* const kSpaceDubSampleBitsAttribute  = "sampleBits";
+static const char* const kSpaceDubProcessModeAttribute = "processMode";
+static const char* const kSpaceDubChannelsAttribute    = "channels";
 
 } // namespace SpaceDub

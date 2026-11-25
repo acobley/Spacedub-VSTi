@@ -319,6 +319,7 @@ set(spacedub_sources
     source/PanelWear.h
     source/SpaceDubPanelViews.h
     source/SpaceDubPanelViews.cpp
+    source/AboutInfo.h
     source/SpaceDubEditor.h
     source/SpaceDubEditor.cpp
     source/SpaceDubEntry.cpp
@@ -331,6 +332,25 @@ smtg_target_configure_version_file(SpaceDub)
 
 target_compile_features(SpaceDub PUBLIC cxx_std_17)
 target_include_directories(SpaceDub PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/source")
+
+# The About box names the git commit it was built from. A custom target runs
+# cmake/SpaceDubGitVersion.cmake on every build (so a new commit shows up
+# without re-configuring); it rewrites the header only when it changes. It is
+# also run once here, so the header exists before the first build.
+find_package(Git QUIET)
+set(SPACEDUB_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(SPACEDUB_GIT_HEADER "${SPACEDUB_GENERATED_DIR}/SpaceDubGitVersion.h")
+set(_spacedub_git_cmd "${CMAKE_COMMAND}" "-DSRC=${CMAKE_CURRENT_SOURCE_DIR}" "-DOUT=${SPACEDUB_GIT_HEADER}"
+    "-DGIT_EXECUTABLE=${GIT_EXECUTABLE}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SpaceDubGitVersion.cmake")
+file(MAKE_DIRECTORY "${SPACEDUB_GENERATED_DIR}")
+execute_process(COMMAND ${_spacedub_git_cmd})
+add_custom_target(SpaceDubGitVersion
+    COMMAND ${_spacedub_git_cmd}
+    BYPRODUCTS "${SPACEDUB_GIT_HEADER}"
+    COMMENT "SpaceDub: stamping the git commit for the About box"
+    VERBATIM)
+add_dependencies(SpaceDub SpaceDubGitVersion)
+target_include_directories(SpaceDub PRIVATE "${SPACEDUB_GENERATED_DIR}")
 
 target_link_libraries(SpaceDub
     PRIVATE

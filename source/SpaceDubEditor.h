@@ -67,6 +67,13 @@ public:
 	double tapMilliseconds (Steinberg::Vst::ParamID delayTag, int* steps = nullptr,
 	                        double* tapsMs = nullptr) const;
 
+	/** The About box: opened by clicking the wordmark, closed by any click
+	    or Escape. refreshAbout() rebuilds its rows (AboutInfo.h). */
+	void openAbout ();
+	void closeAbout ();
+	bool isAboutOpen () const;
+	About::Info aboutInfo () const;
+
 	static const int kEditorWidth  = Layout::kEditorWidth;
 	static const int kEditorHeight = Layout::kEditorHeight;
 
@@ -83,6 +90,7 @@ private:
 	void refreshTapScope ();
 	void refreshTempoScreen ();
 	void refreshHeader ();
+	void refreshAbout ();
 
 	double normalizedOf (Steinberg::Vst::ParamID tag) const;
 	double internalOf (Steinberg::Vst::ParamID tag) const;
@@ -101,6 +109,17 @@ private:
 	Panel::TempoScreen* mTempoScreen = nullptr;
 	Panel::StatusPill*  mStatusPill = nullptr;
 	Panel::TextLine*    mEngineLine = nullptr;
+	Panel::LogoButton*  mLogo = nullptr;
+	Panel::AboutBox*    mAbout = nullptr;
+
+	/** Escape closes the About box. A hook on the frame, because the box
+	    never has keyboard focus. */
+	struct EscapeHook : VSTGUI::IKeyboardHook
+	{
+		SpaceDubEditor* editor = nullptr;
+		void onKeyboardEvent (VSTGUI::KeyboardEvent& event, VSTGUI::CFrame* frame) override;
+	};
+	EscapeHook mEscapeHook;
 	bool mUpdating = false;
 };
 

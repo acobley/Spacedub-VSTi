@@ -462,6 +462,26 @@ static_assert (kDelayRect.bottom + kMargin == kEditorHeight, "the lower sections
 static_assert (kRowRight - 12 + 56 + kKnobTextBand <= kDelayRect.bottom - 12, "the R row fits its sections");
 static_assert (kRowLeft - 12 + 56 + kKnobTextBand < kLinkY - 10, "the L row clears the links");
 static_assert (kWordmark.right < kHeaderDivider && kHeaderDivider < kEngineLine.left, "wordmark, divider, engine line");
+
+//------------------------------------------------------------------------
+// The About box - clicking the wordmark opens it over the whole panel; a
+// click anywhere, or Escape, closes it. See AboutInfo.h for what is in it.
+//------------------------------------------------------------------------
+constexpr Rect   kAboutBox      { 290, 106, 910, 534 };   // centred: 620 x 428
+constexpr double kAboutLabelX   = kAboutBox.left + 32;
+constexpr double kAboutValueX   = kAboutBox.left + 182;
+constexpr double kAboutValueW   = kAboutBox.right - 32 - kAboutValueX;
+constexpr double kAboutWordmarkY = kAboutBox.top + 32;     // the wordmark's centre, in the box's header band
+constexpr double kAboutTaglineY  = kAboutBox.top + 78;
+constexpr double kAboutFirstRowY = kAboutBox.top + 118;    // the first row's centre
+constexpr double kAboutRowGap   = 26;                      // row to row
+constexpr double kAboutLineGap  = 17;                      // a wrapped value's lines
+constexpr double kAboutFooterY  = kAboutBox.bottom - 24;
+constexpr int    kAboutPathLines = 3;                      // most lines a path may take
+constexpr Lettering::Style kTextAboutLabel { 6.1, Lettering::kBold };
+constexpr Lettering::Style kTextAboutValue { 6.7, Lettering::kRegular };
+static_assert (kAboutBox.left >= 0 && kAboutBox.right <= kEditorWidth && kAboutBox.bottom <= kEditorHeight,
+               "the About box is on the panel");
 static_assert (kEditorWidth == 1200 && kEditorHeight == 640, "the panel changed size - update the banner and this assert");
 
 //------------------------------------------------------------------------

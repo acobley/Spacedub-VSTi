@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "AboutInfo.h"
 #include "SpaceDubParams.h"
 
 #include "public.sdk/source/vst/vsteditcontroller.h"
@@ -50,6 +51,11 @@ public:
 	double getHostTempo () const      { return mHostTempo; }
 	double getHostSampleRate () const { return mHostSampleRate; }
 
+	/** For the About box: how the processor is being run (from the same
+	    message as the sample rate), and what the host calls itself. */
+	const About::AudioSettings& getAudioSettings () const { return mAudio; }
+	const std::string& getHostName () const { return mHostName; }
+
 	void editorAttached (Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
 	void editorRemoved (Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
 	void editorDestroyed (Steinberg::Vst::EditorView* editor) SMTG_OVERRIDE;
@@ -58,6 +64,8 @@ private:
 	std::vector<SpaceDubEditor*> mEditors;
 	double mHostTempo      = 0.0;   // 0 = the host has not given us one
 	double mHostSampleRate = 44100.0;
+	About::AudioSettings mAudio;
+	std::string mHostName;
 };
 
 //------------------------------------------------------------------------

@@ -707,6 +707,58 @@ readout follows automatically. There is a test that sweeps the control across
 four sample rates, five tempi and six divisions and asserts the readout time
 matches `DelayLine` exactly.
 
+### The About box
+
+**Click the SPACE DUB wordmark.** The box covers the panel (dimmed) and says
+what is running, where from and how; any click, or Escape, closes it. It is
+drawn in the panel's own lettering, so paths read in capitals - the same
+lettering draws lowercase as capitals everywhere.
+
+| Row | From |
+|---|---|
+| Version | `FULL_VERSION_STR`, version.h |
+| Build | the git commit, branch and "+ local changes", stamped at **build** time |
+| Format | VST3, or Audio Unit when the host is Steinberg's AU wrapper |
+| Host | `IHostApplication::getName`; under the AU wrapper, the app's process name |
+| Audio, Processing | the processor's `ProcessSetup` and output channel count |
+| Tempo | the host's, or the Tempo control's when the host gives none |
+| Loaded from | the plug-in's own binary (`dladdr`), trimmed to its bundle |
+| Authors | Andy Cobley and Claude |
+
+The parts:
+
+* **`source/AboutInfo.h`** decides what the rows say and where a long path
+  wraps (after a `/`, keeping its end - the bundle's name - if it needs more
+  than three lines). No VSTGUI, so `tests/LayoutTests.cpp` check 8 can test
+  it: worst-case content fits, paths wrap and cut properly, the bundle is
+  found for VST3 and AU, and the wordmark's button sits on no control.
+* **`Panel::LogoButton`** is a transparent view over `Layout::kWordmark` (the
+  Backdrop still paints the wordmark), with a hand cursor. **`Panel::AboutBox`**
+  covers the whole editor and swallows every mouse event while it is up. It
+  is created once, hidden, and shown / hidden - never removed - because it
+  closes from inside its own mouse handler. Escape is a keyboard hook on the
+  frame, since the box never has focus.
+* **The audio settings** ride in the message that already carried the sample
+  rate (`SpaceDubSampleRate`, sent from `setActive`, which follows
+  `setupProcessing` and `setBusArrangements`, so all of it is current): four
+  new attributes, `maxBlock`, `sampleBits`, `processMode` and `channels`
+  (SpaceDubIDs.h). A controller that gets only the rate keeps the defaults.
+* **The git stamp** is `cmake/SpaceDubGitVersion.cmake`, run by the
+  `SpaceDubGitVersion` target on every build (and once at configure, so the
+  header exists for the first build). It writes
+  `build/generated/SpaceDubGitVersion.h` only when the commit, branch or
+  dirty state changes, so an unchanged tree rebuilds nothing. A build from a
+  tarball, or without git, says "not built from git". `build-release.sh`
+  refuses a dirty tree, so a released build always names a clean commit.
+
+**Under the Audio Unit wrapper,** `IHostApplication` only ever answers
+"VST3-AU Wrapper", so the host is the process name (`getprogname`). Logic,
+GarageBand and MainStage may run an AU out of process, in an
+`AUHostingService...`; the box then says so rather than naming the service.
+The binary is the VST3 *inside* the `.component`
+(`Contents/Resources/plugin.vst3`), and the `.component` is what is named, as
+that is what was installed.
+
 ---
 
 ## 8. The Audio Unit wrapper

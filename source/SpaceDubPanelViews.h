@@ -39,6 +39,7 @@
 
 #pragma once
 
+#include "AboutInfo.h"
 #include "PanelWear.h"
 #include "SciFiLettering.h"
 #include "SpaceDubLayout.h"
@@ -415,6 +416,50 @@ private:
 	Lettering::Style mStyle;
 	VSTGUI::CColor mColour;
 	std::string mText;
+};
+
+//------------------------------------------------------------------------
+/** THE WORDMARK AS A BUTTON: a transparent view over the header's SPACE DUB,
+    which the Backdrop paints. A click opens the About box; the pointer is a
+    hand while it is over the wordmark. */
+class LogoButton : public VSTGUI::CView
+{
+public:
+	LogoButton (const VSTGUI::CRect& size, std::function<void ()> onClick);
+	void draw (VSTGUI::CDrawContext* context) override;
+	void onMouseEnterEvent (VSTGUI::MouseEnterEvent& event) override;
+	void onMouseExitEvent (VSTGUI::MouseExitEvent& event) override;
+	void onMouseDownEvent (VSTGUI::MouseDownEvent& event) override;
+	void onMouseUpEvent (VSTGUI::MouseUpEvent& event) override;
+	CLASS_METHODS (LogoButton, VSTGUI::CView)
+
+private:
+	std::function<void ()> mOnClick;
+};
+
+//------------------------------------------------------------------------
+/** THE ABOUT BOX. Covers the whole editor: dims the panel, draws a section-
+    style box with the wordmark and the rows from AboutInfo.h, and swallows
+    every mouse event so nothing underneath can be touched while it is up.
+    Any click closes it (as does Escape - the editor's keyboard hook). Kept
+    in the frame for the editor's life and shown / hidden, never removed:
+    it closes from inside its own mouse handler. */
+class AboutBox : public VSTGUI::CView
+{
+public:
+	AboutBox (const VSTGUI::CRect& size, std::function<void ()> onClose);
+	void setRows (std::vector<About::Row> rows);
+	const std::vector<About::Row>& getRows () const { return mRows; }
+	void draw (VSTGUI::CDrawContext* context) override;
+	void onMouseDownEvent (VSTGUI::MouseDownEvent& event) override;
+	void onMouseUpEvent (VSTGUI::MouseUpEvent& event) override;
+	void onMouseMoveEvent (VSTGUI::MouseMoveEvent& event) override;
+	void onMouseWheelEvent (VSTGUI::MouseWheelEvent& event) override;
+	CLASS_METHODS (AboutBox, VSTGUI::CView)
+
+private:
+	std::function<void ()> mOnClose;
+	std::vector<About::Row> mRows;
 };
 
 //------------------------------------------------------------------------

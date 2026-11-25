@@ -8,6 +8,8 @@
 
 #include "base/source/fstreamer.h"
 #include "pluginterfaces/base/ustring.h"
+#include "pluginterfaces/vst/ivsthostapplication.h"
+#include "public.sdk/source/vst/utility/stringconvert.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -107,6 +109,15 @@ tresult PLUGIN_API SpaceDubController::initialize (FUnknown* context)
 	tresult result = EditControllerEx1::initialize (context);
 	if (result != kResultOk)
 		return result;
+
+	// What the host calls itself, for the About box. Under the Audio Unit
+	// wrapper this is the wrapper's own name - see AboutInfo.h.
+	if (FUnknownPtr<IHostApplication> host (context); host)
+	{
+		String128 name = {};
+		if (host->getName (name) == kResultOk)
+			mHostName = Steinberg::Vst::StringConvert::convert (name);
+	}
 
 	for (int i = 0; i < kNumParams; ++i)
 		parameters.addParameter (new SpaceDubParameter (kParams[i]));
@@ -235,16 +246,34 @@ tresult PLUGIN_API SpaceDubController::notify (IMessage* message)
 {
 	if (message && FIDStringsEqual (message->getMessageID (), kSpaceDubSampleRateMessage))
 	{
+		IAttributeList* attrs = message->getAttributes ();
 		double sampleRate = 0.0;
-		if (message->getAttributes ()->getFloat (kSpaceDubSampleRateAttribute, sampleRate) == kResultOk &&
-		    sampleRate > 1000.0 && sampleRate != mHostSampleRate)
+		bool changed = false;
+		if (attrs->getFloat (kSpaceDubSampleRateAttribute, sampleRate) == kResultOk && sampleRate > 1000.0)
 		{
+			changed = sampleRate != mHostSampleRate;
 			mHostSampleRate = sampleRate;
-			// The delay readouts are quoted in milliseconds, and the delay maps
-			// onto a whole number of samples, so they depend on this.
+
+			// The rest is for the About box; an older processor simply leaves
+			// the defaults in place.
+			About::AudioSettings a;
+			a.known      = true;
+			a.sampleRate = sampleRate;
+			int64 v = 0;
+			if (attrs->getInt (kSpaceDubMaxBlockAttribute, v) == kResultOk)    a.maxBlock = static_cast<int> (v);
+			if (attrs->getInt (kSpaceDubSampleBitsAttribute, v) == kResultOk)  a.sampleBits = static_cast<int> (v);
+			if (attrs->getInt (kSpaceDubProcessModeAttribute, v) == kResultOk) a.processMode = static_cast<int> (v);
+			if (attrs->getInt (kSpaceDubChannelsAttribute, v) == kResultOk)    a.channels = static_cast<int> (v);
+			changed = changed || a.maxBlock != mAudio.maxBlock || a.sampleBits != mAudio.sampleBits ||
+			          a.processMode != mAudio.processMode || a.channels != mAudio.channels || !mAudio.known;
+			mAudio = a;
+		}
+		// The delay readouts are quoted in milliseconds, and the delay maps
+		// onto a whole number of samples, so they depend on the rate; the
+		// About box (refreshed from the same call) on all of it.
+		if (changed)
 			for (auto* editor : mEditors)
 				editor->refreshAllReadouts ();
-		}
 		return kResultOk;
 	}
 	return EditControllerEx1::notify (message);
