@@ -142,10 +142,12 @@ double SpaceDubEditor::tapMilliseconds (ParamID delayTag, int* steps, double* ta
 	const double sr         = sampleRate ();
 	const long   lineLength = static_cast<long> (sr) * DelayLine::kLineSeconds;
 	const int    grid       = samplesPer32For (divisions, runningTempo (), sr);
+	const int    refGrid    = samplesPer32For (divisions, kSyncReferenceBpm, sr);   // as the processor
 
 	int  s = 0;
 	long taps[DelayLine::kTapArray] = {};
-	DelayLine::computeTapSamples (static_cast<float> (internalOf (delayTag)), lineLength, grid, taps, &s);
+	DelayLine::computeTapSamples (static_cast<float> (internalOf (delayTag)), lineLength, grid, taps, &s,
+	                              refGrid);
 	if (steps)
 		*steps = s;
 	const double msPerSample = (sr > 0.0) ? 1000.0 / sr : 0.0;

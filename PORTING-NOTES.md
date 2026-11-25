@@ -279,6 +279,32 @@ gaps between grid taps rather than equal fifths.
 **Projects saved with tempo sync on will sound different**: their taps 1–4 move
 onto the grid. Free-running projects are unaffected.
 
+**Synced, the Delay control holds a number of units, not a time.** The DXi
+turned the control into a *time* (linearly, 0–8 s of echo) and then rounded
+that down to whole grid units at the current tempo. So a tempo change kept
+the time roughly and changed the count: at 1/16, a delay on 3U at 120 bpm
+(375 ms) went to **5U, 436.7 ms**, at 171.736 bpm - found in a REAPER
+project with a tempo change, 25 Nov 2026. A tempo-synced delay should keep
+its note value, so 3U should have become 262.0 ms.
+
+The control now counts its units on a fixed grid - the sync rate at
+`kSyncReferenceBpm`, 120 bpm (`SpaceDubParams.h`) - and that count is laid on
+the current grid. `computeDelaySamples` / `computeTapSamples` take it as
+`refSamplesPer32`; the processor and the editor both pass
+`samplesPer32For (divisions, kSyncReferenceBpm, sr)`, so the readout cannot
+drift from the DSP. In practice the control spans four bars of the sync rate
+at any tempo (1/16: 0–64 units).
+
+* **At 120 bpm nothing moved** - the reference *is* the current grid, and
+  `DelayLineTests` check 18 holds every setting identical to the old rule.
+* **At any other tempo a saved project may come back with a different
+  count** - the one it showed at 120 bpm, which is the one the knob's
+  position always meant at 120.
+* **The line is still 8 seconds.** If N x U no longer fits - a long delay at
+  a slow tempo, e.g. 16 quarter notes at 60 bpm - N steps down to the most
+  that does, as before. Check 18 sweeps 33 105 settings over five tempi and
+  checks the count is kept, or is the largest that fits.
+
 **Filter Taps.** In the DXi only tap 5 was filtered: the ladder filter runs on
 the last tap's read (`fEqSample = fLine[nRemovePos]` after the tap loop), and
 its output *replaces* tap 5. Taps 1–4 went to the output straight off the line,

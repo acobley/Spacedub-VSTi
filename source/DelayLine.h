@@ -62,9 +62,18 @@ public:
 	/** The delay-control mapping, factored out so the editor can show the
 	    delay time in its readouts without owning a DelayLine. Returns the
 	    per-tap delay in samples; the audible delay is five times that.
-	    stepsOut, if given, receives the tempo quantisation count. */
+	    stepsOut, if given, receives the tempo quantisation count.
+
+	    SYNCED, THE CONTROL HOLDS A NUMBER OF UNITS, NOT A TIME. It counts
+	    its units on refSamplesPer32 - the grid at kSyncReferenceBpm (120),
+	    SpaceDubParams.h - and that count is laid on the CURRENT grid,
+	    samplesPer32. So 3U stays 3U when the tempo moves, and at 120 bpm
+	    nothing changed. (The DXi counted on the current grid: the control
+	    held a time, re-quantised whenever the tempo moved - 3U at 120 bpm
+	    became 5U at 171.7.) 0 means "count on samplesPer32" - the DXi's rule,
+	    and the same thing at the reference tempo. */
 	static long computeDelaySamples (float delay, long lineLength, int samplesPer32,
-	                                 int* stepsOut = nullptr);
+	                                 int* stepsOut = nullptr, int refSamplesPer32 = 0);
 
 	/** Where every tap sits, in samples: tapsOut[1..kNumTaps] (tapsOut must
 	    hold kTapArray longs; [0] is set to 0). The processor and the editor
@@ -79,9 +88,10 @@ public:
 	        N = 1   ->  1/16, 1/8, 1/4, 1/2, 1 U
 	        N = 3   ->  1/4, 1/2, 1, 2, 3 U
 	        N = 8   ->  1/2, 1, 2, 4, 8 U
-	    stepsOut receives N (0 when not quantised). Returns tap 5. */
+	    stepsOut receives N (0 when not quantised). Returns tap 5.
+	    refSamplesPer32: as computeDelaySamples. */
 	static long computeTapSamples (float delay, long lineLength, int samplesPer32,
-	                               long* tapsOut, int* stepsOut = nullptr);
+	                               long* tapsOut, int* stepsOut = nullptr, int refSamplesPer32 = 0);
 	void  setLoopsFeedback (bool b)         { mLoopsFeedback = b; }
 	void  setMainFeedback (bool b)          { mMainFeedback = b; }
 	void  setMainFeedbackValue (float v)    { mMainFeedbackValue = v; }
@@ -107,9 +117,11 @@ public:
 	void  setMainOutGain (float g)          { mMainOutGain = g; }
 	void  setTapsOutGain (float g)          { mTapsOutGain = g; }
 	void  setFilterGain (float g)           { mFilterGain = g; }
-	/** Number of samples in one bar's worth of the sync rate, or 0 for
-	    free-running.  Drives the tempo quantisation in setDelay(). */
-	void  setSamplesPer32 (int n)           { mSamplesPer32 = n; }
+	/** Number of samples in one step of the sync rate, or 0 for
+	    free-running, and the same at the reference tempo (the grid the
+	    control counts its units on - see computeDelaySamples). Drive the
+	    tempo quantisation in setDelay(). */
+	void  setSamplesPer32 (int n, int ref = 0) { mSamplesPer32 = n; mRefSamplesPer32 = ref; }
 
 	// -- readouts ---------------------------------------------------------
 	int   getTaps () const        { return kNumTaps; }
@@ -214,6 +226,7 @@ private:
 
 	int    mSampleRate   = 44100;
 	int    mSamplesPer32 = 0;
+	int    mRefSamplesPer32 = 0;
 	int    mTempoQuant   = 0;
 
 	float        mNoise[kNoiseLen] = {};

@@ -169,6 +169,7 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 	const double manual   = paramDef (kTempo).toInternal (mParamTargets[kTempo]);
 
 	int samplesPer32 = 0;
+	int refSamplesPer32 = 0;
 	if (divisions != 0)
 	{
 		// The DXi asked for 4 * TPQN / rate ticks, i.e. 4/rate quarter notes.
@@ -176,10 +177,13 @@ void SpaceDubProcessor::updateDelayLines (double hostBpm)
 		// falls back to the Tempo parameter - and the editor computes its
 		// readouts through the very same call.
 		samplesPer32 = samplesPer32For (divisions, effectiveTempo (hostBpm, manual), mSampleRate);
+		// The grid the Delay control counts its units on: fixed, so the
+		// number of units does not move with the tempo.
+		refSamplesPer32 = samplesPer32For (divisions, kSyncReferenceBpm, mSampleRate);
 	}
 
-	mDelayL.setSamplesPer32 (samplesPer32);
-	mDelayR.setSamplesPer32 (samplesPer32);
+	mDelayL.setSamplesPer32 (samplesPer32, refSamplesPer32);
+	mDelayR.setSamplesPer32 (samplesPer32, refSamplesPer32);
 
 	// --- per-block switches ---------------------------------------------
 	const bool loopsFb = paramDef (kLoopsFeedbackEnable).toInternal (mParamTargets[kLoopsFeedbackEnable]) >= 0.5;

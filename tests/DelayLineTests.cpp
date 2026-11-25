@@ -42,6 +42,9 @@
 //        impulse comes back as single, unsmeared samples on the targets.
 //   17.  Denormals: the gliding and crossfading paths, with both feedback
 //        paths on, never write a subnormal either.
+//   18.  Synced, the Delay control holds a NUMBER OF UNITS: the count is the
+//        same at every tempo (unless the line is too short for it), and at
+//        the 120 bpm reference the mapping is the old one, sample for sample.
 //------------------------------------------------------------------------
 
 #include "DelayLine.h"
@@ -598,6 +601,63 @@ int main () {
         std::printf("   %ld subnormal tap samples, last tap 5 %g\n", subnormal, lastTap);
         chk(subnormal == 0, "a moving head produced a subnormal");
         chk(lastTap == 0.f, "the tail did not reach exactly zero");
+    }
+
+    // 18. The report that found it: 1/16 at 120 bpm, Delay on 3U (375 ms);
+    //     the host goes to 171.736 bpm and the echo went to 5U (436.7 ms)
+    //     because the control held a TIME and re-quantised it. It must stay
+    //     3U - 262.0 ms. Then: every rate, tempo and setting keeps its count,
+    //     and at 120 bpm nothing has moved.
+    std::printf("18. synced, the control holds units\n");
+    {
+        long taps[DelayLine::kTapArray] = {};
+        int n120 = 0, nFast = 0;
+        const int ref = samplesPer32For(16, 120.0, 48000);
+        const long a = DelayLine::computeTapSamples(0.058f, 48000L * 8, samplesPer32For(16, 120.0, 48000), taps, &n120, ref);
+        const long b = DelayLine::computeTapSamples(0.058f, 48000L * 8, samplesPer32For(16, 171.736, 48000), taps, &nFast, ref);
+        std::printf("   1/16, delay 0.058: 120 bpm %dU %.1f ms -> 171.736 bpm %dU %.1f ms\n",
+                    n120, a / 48.0, nFast, b / 48.0);
+        chk(n120 == 3 && nFast == 3, "3U did not stay 3U when the tempo moved");
+        chk(std::fabs(b / 48.0 - 3 * 60000.0 / 171.736 / 4) < 0.1, "3U at 171.736 bpm is not 262.0 ms");
+
+        long checked = 0, steppedDown = 0;
+        bool same = true, held = true, fitsBest = true;
+        for (int sr : {44100, 48000, 96000})
+            for (int div : {32, 16, 8, 4, 2, 1}) {
+                const long len = (long) sr * DelayLine::kLineSeconds, maxTotal = (len / 5) * 5;
+                const int r = samplesPer32For(div, 120.0, sr);
+                for (int i = 0; i <= 400; ++i) {
+                    const float dv = i / 400.0f;
+                    long oldT[DelayLine::kTapArray] = {}, newT[DelayLine::kTapArray] = {};
+                    int oldN = 0, newN = 0;
+                    DelayLine::computeTapSamples(dv, len, r, oldT, &oldN);        // the old rule, at 120
+                    DelayLine::computeTapSamples(dv, len, r, newT, &newN, r);
+                    for (int t = 1; t <= 5; ++t) same = same && oldT[t] == newT[t];
+                    same = same && oldN == newN;
+                    if (oldN == 0) continue;
+                    for (double bpm : {60.0, 90.0, 140.0, 171.736, 200.0}) {
+                        const int g = samplesPer32For(div, bpm, sr);
+                        int n = 0;
+                        DelayLine::computeTapSamples(dv, len, g, newT, &n, r);
+                        ++checked;
+                        // the count is kept - or, if N x U no longer fits the
+                        // line, the most that does
+                        long want = oldN;
+                        while (want > 0 && want * g > maxTotal) --want;
+                        if (want != oldN) ++steppedDown;
+                        if (want >= 1) {
+                            held = held && n == want;
+                            fitsBest = fitsBest && newT[5] == want * g;
+                        }
+                    }
+                }
+            }
+        std::printf("   %ld synced settings at other tempi (%ld stepped down to fit the line)\n",
+                    checked, steppedDown);
+        chk(same, "at the 120 bpm reference the mapping moved");
+        chk(held, "a tempo change changed the number of units");
+        chk(fitsBest, "a synced echo is not N x U");
+        chk(steppedDown > 0, "no setting needed stepping down (test is meaningless)");
     }
 
     std::printf(fails ? "\n%d CHECK(S) FAILED\n" : "\nall checks passed\n", fails);

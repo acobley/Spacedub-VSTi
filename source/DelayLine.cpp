@@ -431,7 +431,8 @@ float DelayLine::setDelay (float delay)
 
 	long before[kTapArray];
 	std::copy (mTapSamples, mTapSamples + kTapArray, before);
-	const long last = computeTapSamples (delay, mLength, mSamplesPer32, mTapSamples, &mTempoQuant);
+	const long last = computeTapSamples (delay, mLength, mSamplesPer32, mTapSamples, &mTempoQuant,
+	                                     mRefSamplesPer32);
 	noteNewTargets (before);
 	mDelaySamples   = static_cast<int> (std::max (1L, last / kNumTaps));   // the average spacing
 
@@ -440,10 +441,10 @@ float DelayLine::setDelay (float delay)
 
 //------------------------------------------------------------------------
 long DelayLine::computeTapSamples (float delay, long lineLength, int samplesPer32,
-                                   long* tapsOut, int* stepsOut)
+                                   long* tapsOut, int* stepsOut, int refSamplesPer32)
 {
 	int steps = 0;
-	const long perTap = computeDelaySamples (delay, lineLength, samplesPer32, &steps);
+	const long perTap = computeDelaySamples (delay, lineLength, samplesPer32, &steps, refSamplesPer32);
 
 	// The DXi's spacing: five equal steps.
 	tapsOut[0] = 0;
@@ -486,7 +487,8 @@ long DelayLine::computeTapSamples (float delay, long lineLength, int samplesPer3
 }
 
 //------------------------------------------------------------------------
-long DelayLine::computeDelaySamples (float delay, long lineLength, int samplesPer32, int* stepsOut)
+long DelayLine::computeDelaySamples (float delay, long lineLength, int samplesPer32, int* stepsOut,
+                                     int refSamplesPer32)
 {
 	if (stepsOut)
 		*stepsOut = 0;
@@ -508,11 +510,16 @@ long DelayLine::computeDelaySamples (float delay, long lineLength, int samplesPe
 		long samplesPerTap = samplesPer32 / kNumTaps;
 		if (samplesPerTap < 1)
 			samplesPerTap = 1;
-		const long steps = nDelay / samplesPerTap;
+		// Count the units on the reference grid (see the header): the
+		// control's position, not the tempo, decides how many there are.
+		long refPerTap = (refSamplesPer32 > 0 ? refSamplesPer32 : samplesPer32) / kNumTaps;
+		if (refPerTap < 1)
+			refPerTap = 1;
+		const long steps = nDelay / refPerTap;
 		if (stepsOut)
 			*stepsOut = static_cast<int> (steps);
 		nDelay = steps * samplesPerTap;
-		if (nDelay < samplesPerTap)
+		if (steps < 1)
 		{
 			// Too short to quantise - fall back to the free-running mapping.
 			nDelay = static_cast<long> (delay * static_cast<double> (maxDelay));

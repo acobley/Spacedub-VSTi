@@ -258,6 +258,12 @@ inline int midiRateDivisions (int rate)
 	}
 }
 
+/** The tempo the synced Delay control counts its units at. The control
+    picks a NUMBER of units (at 1/16: 0-64, four bars), the same at every
+    tempo, so a tempo change keeps 3U as 3U; at this tempo the mapping is
+    exactly the DXi's. See DelayLine::computeDelaySamples. */
+constexpr double kSyncReferenceBpm = 120.0;
+
 /** Length of one sync grid step in samples, or 0 when free-running.
     Shared by the processor (which feeds it to DelayLine) and the editor
     (which needs it to show the delay time in its readout). */
